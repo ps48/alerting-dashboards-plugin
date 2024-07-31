@@ -51,6 +51,7 @@ import { getLocalClusterName } from '../../CreateMonitor/components/CrossCluster
 import { getDataSourceQueryObj } from '../../utils/helpers';
 import { MultiDataSourceContext } from '../../../../public/utils/MultiDataSourceContext';
 import { setDataSource } from '../../../services';
+import { MonitorDetailsHeader } from '../components/MonitorDetailsHeader';
 
 export default class MonitorDetails extends Component {
   static contextType = MultiDataSourceContext;
@@ -482,40 +483,15 @@ export default class MonitorDetails extends Component {
     return (
       <div style={{ padding: '25px 50px' }}>
         {this.renderNoTriggersCallOut()}
-        <EuiFlexGroup alignItems="flexEnd">
-          <EuiFlexItem grow={false}>
-            <EuiText size="s" style={{ whiteSpace: 'nowrap', overflow: 'hidden' }}>
-              <h1>{monitor.name}</h1>
-            </EuiText>
-          </EuiFlexItem>
-          <EuiFlexItem style={{ paddingBottom: '5px', marginLeft: '0px' }}>
-            {monitor.enabled ? (
-              <EuiHealth color="success">Enabled</EuiHealth>
-            ) : (
-              <EuiHealth color="subdued">Disabled</EuiHealth>
-            )}
-          </EuiFlexItem>
-          <EuiFlexItem grow={false}>
-            <EuiSmallButton onClick={editMonitor}>Edit</EuiSmallButton>
-          </EuiFlexItem>
-          <EuiFlexItem grow={false}>
-            <EuiSmallButton
-              isLoading={updating}
-              onClick={() => this.updateMonitor({ enabled: !monitor.enabled })}
-            >
-              {monitor.enabled ? 'Disable' : 'Enable'}
-            </EuiSmallButton>
-          </EuiFlexItem>
-          <EuiFlexItem grow={false}>
-            <EuiSmallButton onClick={this.showJsonModal}>Export as JSON</EuiSmallButton>
-          </EuiFlexItem>
-          <EuiFlexItem grow={false}>
-            <EuiSmallButton onClick={this.onDeleteClick} color="danger">
-              Delete
-            </EuiSmallButton>
-          </EuiFlexItem>
-        </EuiFlexGroup>
-        <EuiSpacer />
+
+        <MonitorDetailsHeader
+          monitor={monitor}
+          editMonitor={editMonitor}
+          updating={updating}
+          updateMonitor={this.updateMonitor}
+          showJsonModal={this.showJsonModal}
+          onDeleteClick={this.onDeleteClick}
+        />
         <MonitorOverview
           monitor={monitor}
           monitorId={monitorId}
