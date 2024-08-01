@@ -318,7 +318,7 @@ export default class MonitorDetails extends Component {
       );
     }
 
-    return null;
+    return <></>;
   };
 
   showJsonModal = () => {
@@ -491,6 +491,7 @@ export default class MonitorDetails extends Component {
           updateMonitor={this.updateMonitor}
           showJsonModal={this.showJsonModal}
           onDeleteClick={this.onDeleteClick}
+          renderNoTriggersCallOut={this.renderNoTriggersCallOut}
         />
         <MonitorOverview
           monitor={monitor}

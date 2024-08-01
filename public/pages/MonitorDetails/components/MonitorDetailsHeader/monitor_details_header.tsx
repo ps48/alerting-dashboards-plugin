@@ -3,7 +3,14 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { EuiFlexGroup, EuiFlexItem, EuiHealth, EuiSmallButton, EuiText } from '@elastic/eui';
+import {
+  EuiButtonIcon,
+  EuiFlexGroup,
+  EuiFlexItem,
+  EuiHealth,
+  EuiSmallButton,
+  EuiText,
+} from '@elastic/eui';
 import React from 'react';
 import { getApplication, getNavigationUI, getUISettings } from '../../../../services';
 
@@ -14,6 +21,7 @@ interface MonitorDetailsHeaderProps {
   updateMonitor: (update: any, actionKeywords?: string[]) => any;
   showJsonModal: () => void;
   onDeleteClick: () => void;
+  renderNoTriggersCallOut: () => React.JSX.Element;
 }
 export const MonitorDetailsHeader = ({
   monitor,
@@ -22,82 +30,113 @@ export const MonitorDetailsHeader = ({
   updateMonitor,
   showJsonModal,
   onDeleteClick,
+  renderNoTriggersCallOut,
 }: MonitorDetailsHeaderProps) => {
-  const { HeaderControls } = getNavigationUI();
-  const { setAppLeftControls } = getApplication();
+  const { HeaderControl } = getNavigationUI();
+  const { setAppRightControls, setAppBadgeControls, setAppBottomControls } = getApplication();
   const uiSettings = getUISettings();
   const showActionsInHeader = uiSettings.get('home:useNewHomePage');
   return showActionsInHeader ? (
     <>
-      <HeaderControls
-        setMountPoint={setAppLeftControls}
+      <HeaderControl
+        setMountPoint={setAppBadgeControls}
         controls={[
           {
-            id: '',
-            label: '',
-            iconType: 'trash',
-            testId: 'deleteButton',
-            color: 'danger',
-            run: onDeleteClick,
+            renderComponent: monitor.enabled ? (
+              <EuiHealth color="success">Enabled</EuiHealth>
+            ) : (
+              <EuiHealth color="subdued">Disabled</EuiHealth>
+            ),
+          },
+        ]}
+      />
+      <HeaderControl
+        setMountPoint={setAppRightControls}
+        controls={[
+          {
+            renderComponent: (
+              <EuiButtonIcon
+                onClick={onDeleteClick}
+                color="danger"
+                iconType="trash"
+                display="base"
+                size="s"
+              >
+                Delete
+              </EuiButtonIcon>
+            ),
           },
           {
-            id: 'Update monitor',
-            label: monitor.enabled ? 'Disable' : 'Enable',
-            testId: 'updateButton',
-            isLoading: updating,
-            run: () => updateMonitor({ enabled: !monitor.enabled }),
+            renderComponent: (
+              <EuiSmallButton
+                isLoading={updating}
+                onClick={() => updateMonitor({ enabled: !monitor.enabled })}
+              >
+                {monitor.enabled ? 'Disable' : 'Enable'}
+              </EuiSmallButton>
+            ),
           },
           {
-            id: 'export monitor',
-            label: 'Export as JSON',
-            testId: 'exportButton',
-            run: showJsonModal,
+            renderComponent: (
+              <EuiSmallButton onClick={showJsonModal}>Export as JSON</EuiSmallButton>
+            ),
           },
           {
-            id: 'Edit monitor',
-            label: 'Edit',
-            testId: 'editButton',
-            run: editMonitor,
-            fill: true,
+            renderComponent: (
+              <EuiSmallButton onClick={editMonitor} fill>
+                Edit
+              </EuiSmallButton>
+            ),
+          },
+        ]}
+      />
+      <HeaderControl
+        setMountPoint={setAppBottomControls}
+        controls={[
+          {
+            renderComponent: renderNoTriggersCallOut(),
           },
         ]}
       />
     </>
   ) : (
-    <EuiFlexGroup alignItems="flexEnd">
-      <EuiFlexItem grow={false}>
-        <EuiText size="s" style={{ whiteSpace: 'nowrap', overflow: 'hidden' }}>
-          <h1>{monitor.name}</h1>
-        </EuiText>
-      </EuiFlexItem>
-      <EuiFlexItem style={{ paddingBottom: '5px', marginLeft: '0px' }}>
-        {monitor.enabled ? (
-          <EuiHealth color="success">Enabled</EuiHealth>
-        ) : (
-          <EuiHealth color="subdued">Disabled</EuiHealth>
-        )}
-      </EuiFlexItem>
-      <EuiFlexGroup>
+    <>
+      {renderNoTriggersCallOut()}
+      <EuiFlexGroup alignItems="flexEnd">
         <EuiFlexItem grow={false}>
-          <EuiSmallButton onClick={editMonitor}>Edit</EuiSmallButton>
+          <EuiText size="s" style={{ whiteSpace: 'nowrap', overflow: 'hidden' }}>
+            <h1>{monitor.name}</h1>
+          </EuiText>
         </EuiFlexItem>
-        <EuiFlexItem grow={false}>
-          <EuiSmallButton
-            isLoading={updating}
-            onClick={() => updateMonitor({ enabled: !monitor.enabled })}
-          >
-            {monitor.enabled ? 'Disable' : 'Enable'}
-          </EuiSmallButton>
+        <EuiFlexItem style={{ paddingBottom: '5px', marginLeft: '0px' }}>
+          {monitor.enabled ? (
+            <EuiHealth color="success">Enabled</EuiHealth>
+          ) : (
+            <EuiHealth color="subdued">Disabled</EuiHealth>
+          )}
         </EuiFlexItem>
-        <EuiFlexItem grow={false}>
-          <EuiSmallButton onClick={showJsonModal}>Export as JSON</EuiSmallButton>
-        </EuiFlexItem>
-        <EuiFlexItem grow={false}>
-          <EuiSmallButton onClick={onDeleteClick} color="danger">
-            Delete
-          </EuiSmallButton>
-        </EuiFlexItem>
+        <EuiFlexGroup>
+          <EuiFlexItem grow={false}>
+            <EuiSmallButton onClick={editMonitor}>Edit</EuiSmallButton>
+          </EuiFlexItem>
+          <EuiFlexItem grow={false}>
+            <EuiSmallButton
+              isLoading={updating}
+              onClick={() => updateMonitor({ enabled: !monitor.enabled })}
+            >
+              {monitor.enabled ? 'Disable' : 'Enable'}
+            </EuiSmallButton>
+          </EuiFlexItem>
+          <EuiFlexItem grow={false}>
+            <EuiSmallButton onClick={showJsonModal}>Export as JSON</EuiSmallButton>
+          </EuiFlexItem>
+          <EuiFlexItem grow={false}>
+            <EuiSmallButton onClick={onDeleteClick} color="danger">
+              Delete
+            </EuiSmallButton>
+          </EuiFlexItem>
+        </EuiFlexGroup>
       </EuiFlexGroup>
-    </EuiFlexGroup>
+    </>
   );
 };
