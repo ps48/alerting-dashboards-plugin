@@ -11,6 +11,8 @@ import Dashboard from '../Dashboard/containers/Dashboard';
 import Monitors from '../Monitors/containers/Monitors';
 import DestinationsList from '../Destinations/containers/DestinationsList';
 
+import PrometheusDashboard from '../../prometheus/components/dashboards/dashboard';
+
 const getSelectedTabId = (pathname) => {
   if (pathname.includes('monitors')) return 'monitors';
   if (pathname.includes('destinations')) return 'destinations';
@@ -92,7 +94,7 @@ export default class Home extends Component {
               exact
               path="/dashboard"
               render={(props) => (
-                <Dashboard
+                <PrometheusDashboard 
                   {...props}
                   httpClient={httpClient}
                   notifications={notifications}
@@ -100,6 +102,14 @@ export default class Home extends Component {
                   setFlyout={setFlyout}
                   landingDataSourceId={landingDataSourceId}
                 />
+                // <Dashboard
+                //   {...props}
+                //   httpClient={httpClient}
+                //   notifications={notifications}
+                //   perAlertView={false}
+                //   setFlyout={setFlyout}
+                //   landingDataSourceId={landingDataSourceId}
+                // />
               )}
             />
             <Route
