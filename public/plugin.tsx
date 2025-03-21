@@ -164,7 +164,7 @@ export class AlertingPlugin implements Plugin<void, AlertingStart, AlertingSetup
       });
 
       core.application.register({
-        id: 'prometheus-alerting',
+        id: 'prometheusAlerting',
         title: 'Prometheus Alerting',
         order: 9070,
         category: DEFAULT_APP_CATEGORIES.detect,
@@ -175,7 +175,7 @@ export class AlertingPlugin implements Plugin<void, AlertingStart, AlertingSetup
       });
 
       core.application.register({
-        id: 'prom-rules',
+        id: 'prometheusRules',
         title: 'Rules',
         order: 10090,
         category: DEFAULT_APP_CATEGORIES.detect,
@@ -186,7 +186,7 @@ export class AlertingPlugin implements Plugin<void, AlertingStart, AlertingSetup
       });
 
       core.application.register({
-        id: 'prom-silences',
+        id: 'prometheusSilences',
         title: 'Silences',
         order: 10091,
         category: DEFAULT_APP_CATEGORIES.detect,
@@ -197,7 +197,7 @@ export class AlertingPlugin implements Plugin<void, AlertingStart, AlertingSetup
       });
 
       core.application.register({
-        id: 'prom-notifications',
+        id: 'prometheusNotifications',
         title: 'Notification Policies',
         order: 10092,
         category: DEFAULT_APP_CATEGORIES.detect,
@@ -227,20 +227,20 @@ export class AlertingPlugin implements Plugin<void, AlertingStart, AlertingSetup
           parentNavLinkId: PLUGIN_NAME,
         },
         {
-          id: 'prometheus-alerting',
+          id: 'prometheusAlerting',
           parentNavLinkId: PLUGIN_NAME,
         },
         {
-          id: 'prom-rules',
-          parentNavLinkId: 'prometheus-alerting',
+          id: 'prometheusRules',
+          parentNavLinkId: 'prometheusAlerting',
         },
         {
-          id: 'prom-notifications',
-          parentNavLinkId: 'prometheus-alerting',
+          id: 'prometheusNotifications',
+          parentNavLinkId: 'prometheusAlerting',
         },
         {
-          id: 'prom-silences',
-          parentNavLinkId: 'prometheus-alerting',
+          id: 'prometheusSilences',
+          parentNavLinkId: 'prometheusAlerting',
         },
       ];
 
