@@ -133,8 +133,8 @@ export class AlertingPlugin implements Plugin<void, AlertingStart, AlertingSetup
       core.application.register({
         id: ALERTS_NAV_ID,
         title: 'Alerts',
-        order: 9070,
-        category: DEFAULT_APP_CATEGORIES.detect,
+        order: 5096,
+        category: DEFAULT_APP_CATEGORIES.observability,
         updater$: this.appStateUpdater,
         mount: async (params: AppMountParameters) => {
           return mountWrapper(params, "/dashboard");
@@ -163,6 +163,50 @@ export class AlertingPlugin implements Plugin<void, AlertingStart, AlertingSetup
         },
       });
 
+      core.application.register({
+        id: 'prometheus-alerting',
+        title: 'Prometheus Alerting',
+        order: 9070,
+        category: DEFAULT_APP_CATEGORIES.detect,
+        updater$: this.appStateUpdater,
+        mount: async (params: AppMountParameters) => {
+          return mountWrapper(params, "/rules");
+        },
+      });
+
+      core.application.register({
+        id: 'prom-rules',
+        title: 'Rules',
+        order: 10090,
+        category: DEFAULT_APP_CATEGORIES.detect,
+        updater$: this.appStateUpdater,
+        mount: async (params: AppMountParameters) => {
+          return mountWrapper(params, "/rules");
+        },
+      });
+
+      core.application.register({
+        id: 'prom-silences',
+        title: 'Silences',
+        order: 10091,
+        category: DEFAULT_APP_CATEGORIES.detect,
+        updater$: this.appStateUpdater,
+        mount: async (params: AppMountParameters) => {
+          return mountWrapper(params, "/silences");
+        },
+      });
+
+      core.application.register({
+        id: 'prom-notifications',
+        title: 'Notification Policies',
+        order: 10092,
+        category: DEFAULT_APP_CATEGORIES.detect,
+        updater$: this.appStateUpdater,
+        mount: async (params: AppMountParameters) => {
+          return mountWrapper(params, "/notifications");
+        },
+      });
+
       dataSourceObservable.subscribe((dataSourceOption) => {
         if (dataSourceOption) {
           this.appStateUpdater.next(this.updateDefaultRouteOfManagementApplications);
@@ -172,7 +216,7 @@ export class AlertingPlugin implements Plugin<void, AlertingStart, AlertingSetup
       const navLinks = [
         {
           id: ALERTS_NAV_ID,
-          parentNavLinkId: PLUGIN_NAME,
+          parentNavLinkId: DEFAULT_APP_CATEGORIES.observability,
         },
         {
           id: MONITORS_NAV_ID,
@@ -181,6 +225,22 @@ export class AlertingPlugin implements Plugin<void, AlertingStart, AlertingSetup
         {
           id: DESTINATIONS_NAV_ID,
           parentNavLinkId: PLUGIN_NAME,
+        },
+        {
+          id: 'prometheus-alerting',
+          parentNavLinkId: PLUGIN_NAME,
+        },
+        {
+          id: 'prom-rules',
+          parentNavLinkId: 'prometheus-alerting',
+        },
+        {
+          id: 'prom-notifications',
+          parentNavLinkId: 'prometheus-alerting',
+        },
+        {
+          id: 'prom-silences',
+          parentNavLinkId: 'prometheus-alerting',
         },
       ];
 
