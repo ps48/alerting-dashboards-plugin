@@ -125,7 +125,7 @@ const PrometheusDashboard = ({ httpClient, dataConnectionId }) => {
       filter: filterArr,
       // Optionally, add a "receiver" parameter if needed.
     };
-    console.log('query: ', query);
+
     const dataConnectionId = "prometheus_k8s_cluster";
     try {
       const response = await httpClient.get(
