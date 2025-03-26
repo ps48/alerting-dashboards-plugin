@@ -33,6 +33,26 @@ const PrometheusRulesDashboard = ({ httpClient, dataConnectionId }) => {
   useEffect(() => {
     fetchRules();
   }, [ruleTypeFilter, ruleGroupFilter, severityFilter]);
+  
+  useEffect(() => {
+    const lowerSearch = search.trim().toLowerCase();
+  
+    if (!lowerSearch) {
+      setFilteredRules(rulesData);
+      return;
+    }
+  
+    const filtered = rulesData.map((group) => {
+      const filteredRules = group.rules.filter(
+        (rule) =>
+          rule.name.toLowerCase().includes(lowerSearch) ||
+          rule.annotations?.summary?.toLowerCase().includes(lowerSearch)
+      );
+      return { ...group, rules: filteredRules };
+    }).filter(group => group.rules.length > 0);
+  
+    setFilteredRules(filtered);
+  }, [search, rulesData]);
 
   const fetchRules = async () => {
     try {
@@ -40,7 +60,7 @@ const PrometheusRulesDashboard = ({ httpClient, dataConnectionId }) => {
       if (ruleTypeFilter) query.type = ruleTypeFilter;
       if (ruleGroupFilter) query["rule_group[]"] = ruleGroupFilter;
       if (severityFilter) query["match[]"] = `severity=\"${severityFilter}\"`;
-      const dataConnectionId = "prometheus_k8s_cluster";
+      const dataConnectionId = "prometheus_2";
       const response = await httpClient.get(
         `/api/enhancements/prometheus/${dataConnectionId}/resources/rules`,
         { query }
@@ -191,7 +211,7 @@ const PrometheusRulesDashboard = ({ httpClient, dataConnectionId }) => {
             onChange={(e) => setRuleGroupFilter(e.target.value)}
           />
         </EuiFlexItem>
-        <EuiFlexItem>
+        {/* <EuiFlexItem>
           <EuiSelect
             options={[
               { value: "", text: "All Severities" },
@@ -201,7 +221,7 @@ const PrometheusRulesDashboard = ({ httpClient, dataConnectionId }) => {
             value={severityFilter}
             onChange={(e) => setSeverityFilter(e.target.value)}
           />
-        </EuiFlexItem>
+        </EuiFlexItem> */}
       </EuiFlexGroup>
 
       <EuiSpacer size="m" />

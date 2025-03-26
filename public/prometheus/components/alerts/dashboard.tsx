@@ -30,6 +30,7 @@ const PrometheusDashboard = ({ httpClient, dataConnectionId }) => {
   const [severityFilter, setSeverityFilter] = useState("");
   const [groupFilter, setGroupFilter] = useState("");
   const [groupData, setGroupData] = useState([]);
+  const [filteredGroupData, setFilteredGroupData] = useState([]);
   const [itemIdToExpandedRowMap, setItemIdToExpandedRowMap] = useState({});
   const [sortConfig, setSortConfig] = useState({
     field: 'state',
@@ -88,10 +89,9 @@ const PrometheusDashboard = ({ httpClient, dataConnectionId }) => {
       unprocessed = stateFilter === "unprocessed";
     }
     const filterArr = [];
-    if (search) filterArr.push(search);
     if (severityFilter) filterArr.push(`severity=${severityFilter}`);
     if (groupFilter) filterArr.push(`alertname=${groupFilter}`);
-    const dataConnectionId = "prometheus_k8s_cluster";
+    const dataConnectionId = "prometheus_2";
     try {
       const response = await httpClient.get(
         `/api/enhancements/prometheus/${dataConnectionId}/resources/alert_manager_alert_groups`,
@@ -106,6 +106,7 @@ const PrometheusDashboard = ({ httpClient, dataConnectionId }) => {
         }
       );
       setGroupData(response.data);
+      setFilteredGroupData(response.data);
     } catch (error) {
       console.error("Error fetching alert data:", error);
     }
@@ -113,7 +114,33 @@ const PrometheusDashboard = ({ httpClient, dataConnectionId }) => {
 
   useEffect(() => {
     fetchAlertData();
-  }, [search, stateFilter, severityFilter, groupFilter, dataConnectionId, httpClient]);
+  }, [stateFilter, severityFilter, groupFilter, dataConnectionId, httpClient]);
+
+  useEffect(() => {
+    const trimmedSearch = search.trim().toLowerCase();
+    if (!trimmedSearch) {
+      setFilteredGroupData(groupData);
+      return;
+    }
+
+    const filtered = groupData.map((group) => {
+      const filteredAlerts = group.alerts.filter((alert) => {
+        const name = alert.labels?.alertname || alert.labels?.rule || "";
+        const summary = alert.annotations?.summary || "";
+        const description = alert.annotations?.description || "";
+        const receiver = group.receiver?.name || "";
+        return (
+          name.toLowerCase().includes(trimmedSearch) ||
+          summary.toLowerCase().includes(trimmedSearch) ||
+          description.toLowerCase().includes(trimmedSearch) ||
+          receiver.toLowerCase().includes(trimmedSearch)
+        );
+      });
+      return { ...group, alerts: filteredAlerts };
+    }).filter(group => group.alerts.length > 0);
+
+    setFilteredGroupData(filtered);
+  }, [search, groupData]);
 
   const toggleDetails = (alert) => {
     const { fingerprint } = alert;
@@ -233,16 +260,13 @@ const PrometheusDashboard = ({ httpClient, dataConnectionId }) => {
         <EuiFlexItem grow={1}>
           <EuiSelect options={stateOptions} value={stateFilter} onChange={(e) => setStateFilter(e.target.value)} />
         </EuiFlexItem>
-        {/* <EuiFlexItem grow={1}>
-          <EuiSelect options={severityOptions} value={severityFilter} onChange={(e) => setSeverityFilter(e.target.value)} />
-        </EuiFlexItem> */}
         <EuiFlexItem grow={1}>
           <EuiSelect options={groupOptions} value={groupFilter} onChange={(e) => setGroupFilter(e.target.value)} />
         </EuiFlexItem>
       </EuiFlexGroup>
       <EuiSpacer size="m" />
 
-      {groupData.map((group, index) => {
+      {filteredGroupData.map((group, index) => {
         const groupKey = getGroupKey(group.labels);
         if (groupFilter && groupKey !== groupFilter) return null;
         const items = group.alerts.map((alert) => ({
