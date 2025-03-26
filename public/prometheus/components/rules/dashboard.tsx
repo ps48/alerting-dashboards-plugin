@@ -135,7 +135,7 @@ const PrometheusRulesDashboard = ({ httpClient, dataConnectionId }) => {
     {
       field: "name",
       name: "Rule Name",
-      render: (name) => <strong>{name}</strong>,
+      render: (name) => name,
     },
     {
       field: "labels.severity",

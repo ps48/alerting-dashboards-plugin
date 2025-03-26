@@ -166,11 +166,22 @@ export class AlertingPlugin implements Plugin<void, AlertingStart, AlertingSetup
       core.application.register({
         id: 'prometheusAlerting',
         title: 'Prometheus Alerting',
-        order: 9070,
+        order: 9071,
         category: DEFAULT_APP_CATEGORIES.detect,
         updater$: this.appStateUpdater,
         mount: async (params: AppMountParameters) => {
-          return mountWrapper(params, "/rules");
+          return mountWrapper(params, "/alerting");
+        },
+      });
+
+      core.application.register({
+        id: 'prometheusAlerts',
+        title: 'Alerts',
+        order: 10089,
+        category: DEFAULT_APP_CATEGORIES.detect,
+        updater$: this.appStateUpdater,
+        mount: async (params: AppMountParameters) => {
+          return mountWrapper(params, "/alerts");
         },
       });
 
@@ -216,7 +227,7 @@ export class AlertingPlugin implements Plugin<void, AlertingStart, AlertingSetup
       const navLinks = [
         {
           id: ALERTS_NAV_ID,
-          parentNavLinkId: DEFAULT_APP_CATEGORIES.observability,
+          parentNavLinkId: PLUGIN_NAME,
         },
         {
           id: MONITORS_NAV_ID,
@@ -231,17 +242,21 @@ export class AlertingPlugin implements Plugin<void, AlertingStart, AlertingSetup
           parentNavLinkId: PLUGIN_NAME,
         },
         {
+          id: 'prometheusAlerts',
+          parentNavLinkId: 'prometheusAlerting',
+        },
+        {
           id: 'prometheusRules',
           parentNavLinkId: 'prometheusAlerting',
         },
-        {
-          id: 'prometheusNotifications',
-          parentNavLinkId: 'prometheusAlerting',
-        },
-        {
-          id: 'prometheusSilences',
-          parentNavLinkId: 'prometheusAlerting',
-        },
+        // {
+        //   id: 'prometheusNotifications',
+        //   parentNavLinkId: 'prometheusAlerting',
+        // },
+        // {
+        //   id: 'prometheusSilences',
+        //   parentNavLinkId: 'prometheusAlerting',
+        // },
       ];
 
       core.chrome.navGroup.addNavLinksToGroup(

@@ -11,7 +11,7 @@ import Dashboard from '../Dashboard/containers/Dashboard';
 import Monitors from '../Monitors/containers/Monitors';
 import DestinationsList from '../Destinations/containers/DestinationsList';
 
-import PrometheusDashboard from '../../prometheus/components/dashboards/dashboard';
+import PrometheusDashboard from '../../prometheus/components/alerts/dashboard';
 import PromethuesRulesDashboard from '../../prometheus/components/rules/dashboard';
 
 const getSelectedTabId = (pathname) => {
@@ -95,7 +95,7 @@ export default class Home extends Component {
               exact
               path="/dashboard"
               render={(props) => (
-                <PrometheusDashboard 
+                <Dashboard
                   {...props}
                   httpClient={httpClient}
                   notifications={notifications}
@@ -103,14 +103,6 @@ export default class Home extends Component {
                   setFlyout={setFlyout}
                   landingDataSourceId={landingDataSourceId}
                 />
-                // <Dashboard
-                //   {...props}
-                //   httpClient={httpClient}
-                //   notifications={notifications}
-                //   perAlertView={false}
-                //   setFlyout={setFlyout}
-                //   landingDataSourceId={landingDataSourceId}
-                // />
               )}
             />
             <Route
@@ -138,7 +130,32 @@ export default class Home extends Component {
             />
             <Route
               exact
+              path="/alerts"
+              render={(props) => (
+                <PrometheusDashboard 
+                  {...props}
+                  httpClient={httpClient}
+                  notifications={notifications}
+                  perAlertView={false}
+                  setFlyout={setFlyout}
+                  landingDataSourceId={landingDataSourceId}
+                />
+              )}
+            />
+            <Route
+              exact
               path="/rules"
+              render={(props) => (
+                <PromethuesRulesDashboard
+                  {...props}
+                  httpClient={httpClient}
+                  notifications={notifications}
+                />
+              )}
+            />
+            <Route
+              exact
+              path="/silences"
               render={(props) => (
                 <PromethuesRulesDashboard
                   {...props}

@@ -233,9 +233,9 @@ const PrometheusDashboard = ({ httpClient, dataConnectionId }) => {
         <EuiFlexItem grow={1}>
           <EuiSelect options={stateOptions} value={stateFilter} onChange={(e) => setStateFilter(e.target.value)} />
         </EuiFlexItem>
-        <EuiFlexItem grow={1}>
+        {/* <EuiFlexItem grow={1}>
           <EuiSelect options={severityOptions} value={severityFilter} onChange={(e) => setSeverityFilter(e.target.value)} />
-        </EuiFlexItem>
+        </EuiFlexItem> */}
         <EuiFlexItem grow={1}>
           <EuiSelect options={groupOptions} value={groupFilter} onChange={(e) => setGroupFilter(e.target.value)} />
         </EuiFlexItem>
