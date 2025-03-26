@@ -6,7 +6,6 @@
 import React, { useState, useEffect } from "react";
 import {
   EuiAccordion,
-  EuiBasicTable,
   EuiBadge,
   EuiButtonIcon,
   EuiFieldSearch,
@@ -16,6 +15,10 @@ import {
   EuiSelect,
   EuiSpacer,
   EuiText,
+  EuiPanel,
+  EuiInMemoryTable,
+  EuiCodeBlock,
+  EuiHorizontalRule,
 } from "@elastic/eui";
 
 const PrometheusRulesDashboard = ({ httpClient, dataConnectionId }) => {
@@ -33,75 +36,101 @@ const PrometheusRulesDashboard = ({ httpClient, dataConnectionId }) => {
 
   const fetchRules = async () => {
     try {
-      const params = new URLSearchParams();
-      if (ruleTypeFilter) params.append("type", ruleTypeFilter);
-      if (ruleGroupFilter) params.append("rule_group[]", ruleGroupFilter);
-      if (severityFilter) params.append("match[]", `severity="${severityFilter}"`);
+      const query = {};
+      if (ruleTypeFilter) query.type = ruleTypeFilter;
+      if (ruleGroupFilter) query["rule_group[]"] = ruleGroupFilter;
+      if (severityFilter) query["match[]"] = `severity=\"${severityFilter}\"`;
       const dataConnectionId = "prometheus_k8s_cluster";
       const response = await httpClient.get(
-        `/api/enhancements/prometheus/${dataConnectionId}/resources/rules?${params.toString()}`
+        `/api/enhancements/prometheus/${dataConnectionId}/resources/rules`,
+        { query }
       );
+
       const { data } = response;
-      if (data && data.groups) {
-        setRulesData(data.groups);
-        setFilteredRules(data.groups);
+      if (data?.groups) {
+        const ruleNames = new Set();
+        const dedupedGroups = data.groups.map((group) => {
+          const rules = group.rules.filter((rule) => {
+            const uniqueKey = `${group.name}::${rule.name}`;
+            if (ruleNames.has(uniqueKey)) return false;
+            ruleNames.add(uniqueKey);
+            return true;
+          });
+          return { ...group, rules };
+        });
+        setRulesData(dedupedGroups);
+        setFilteredRules(dedupedGroups);
       }
     } catch (error) {
       console.error("Error fetching rules:", error);
     }
   };
 
-  const toggleDetails = (ruleName) => {
+  const toggleDetails = (groupName, ruleName, rule) => {
+    const key = `${groupName}::${ruleName}`;
     setExpandedRowMap((prev) => ({
       ...prev,
-      [ruleName]: prev[ruleName] ? null : getExpandedRowContent(ruleName),
+      [key]: prev[key] ? undefined : getExpandedRowContent(rule),
     }));
   };
 
   const getExpandedRowContent = (rule) => (
-    <EuiText style={{ backgroundColor: "#fff", padding: "10px" }}>
-      <EuiSpacer size="s" />
-      <h4>Query</h4>
-      <p>{rule.query || "N/A"}</p>
+    <div style={{ padding: "1rem", backgroundColor: "#fff" }}>
+      <EuiText><h4>Query</h4></EuiText>
+      <EuiCodeBlock language="sql" fontSize="s" paddingSize="s" isCopyable>{rule.query || "N/A"}</EuiCodeBlock>
 
       <EuiSpacer size="s" />
-      <h4>Duration</h4>
+      <EuiText><h4>Duration</h4></EuiText>
       <p>{rule.duration ? `${rule.duration} seconds` : "N/A"}</p>
 
       <EuiSpacer size="s" />
-      <h4>Annotations</h4>
+      <EuiText><h4>Annotations</h4></EuiText>
       {rule.annotations ? (
-        Object.entries(rule.annotations).map(([key, value]) => (
-          <EuiBadge key={key} color="hollow">
-            {key}: {value}
-          </EuiBadge>
-        ))
+        <EuiFlexGroup wrap gutterSize="xs">
+          {Object.entries(rule.annotations).map(([key, value]) => (
+            <EuiFlexItem grow={false} key={key}>
+              <EuiBadge color="hollow">{key}: {value}</EuiBadge>
+            </EuiFlexItem>
+          ))}
+        </EuiFlexGroup>
       ) : (
         <p>N/A</p>
       )}
-    </EuiText>
+    </div>
   );
 
-  const columns = [
+  const getStateDisplay = (rule) => {
+    if (rule.type === "recording") {
+      return <EuiHealth color="subdued">Recording rule</EuiHealth>;
+    }
+    const state = rule.state || "normal";
+    const colorMap = {
+      normal: "success",
+      firing: "danger",
+      pending: "warning",
+      inactive: "subdued",
+    };
+    return <EuiBadge color={colorMap[state] || "hollow"}>{state.charAt(0).toUpperCase() + state.slice(1)}</EuiBadge>;
+  };
+
+  const getColumns = (groupName) => [
     {
       width: "40px",
       isExpander: true,
-      render: (rule) => (
-        <EuiButtonIcon
-          onClick={() => toggleDetails(rule.name)}
-          aria-label={expandedRowMap[rule.name] ? "Collapse" : "Expand"}
-          iconType={expandedRowMap[rule.name] ? "arrowUp" : "arrowDown"}
-        />
-      ),
+      render: (rule) => {
+        const key = `${groupName}::${rule.name}`;
+        return (
+          <EuiButtonIcon
+            onClick={() => toggleDetails(groupName, rule.name, rule)}
+            aria-label={expandedRowMap[key] ? "Collapse" : "Expand"}
+            iconType={expandedRowMap[key] ? "arrowUp" : "arrowDown"}
+          />
+        );
+      },
     },
     {
-      field: "state",
       name: "State",
-      render: (state) => (
-        <EuiHealth color={state === "inactive" ? "subdued" : "primary"}>
-          {state || "Unknown"}
-        </EuiHealth>
-      ),
+      render: getStateDisplay,
     },
     {
       field: "name",
@@ -123,15 +152,13 @@ const PrometheusRulesDashboard = ({ httpClient, dataConnectionId }) => {
       render: (summary) => summary || "N/A",
     },
     {
-      field: "alerts.length",
       name: "Active Alerts",
-      render: (alerts) => alerts?.length || "0",
+      render: (rule) => rule.alerts?.length || "0",
     },
   ];
 
   return (
-    <div>
-      {/* Filters */}
+    <EuiPanel>
       <EuiFlexGroup>
         <EuiFlexItem>
           <EuiFieldSearch
@@ -179,18 +206,40 @@ const PrometheusRulesDashboard = ({ httpClient, dataConnectionId }) => {
 
       <EuiSpacer size="m" />
 
-      {/* Rule Groups as Accordions */}
-      {filteredRules.map((group, index) => (
-        <EuiAccordion key={index} id={`group-${index}`} buttonContent={`Group: ${group.name} (${group.rules.length} rules)`} initialIsOpen>
-          <EuiBasicTable
-            items={group.rules}
-            columns={columns}
-            itemId="name"
-            itemIdToExpandedRowMap={expandedRowMap}
-          />
-        </EuiAccordion>
-      ))}
-    </div>
+      {filteredRules.map((group, index) => {
+        const expandedMap = Object.fromEntries(
+          group.rules.map((rule) => {
+            const key = `${group.name}::${rule.name}`;
+            return expandedRowMap[key] ? [key, getExpandedRowContent(rule)] : null;
+          }).filter(Boolean)
+        );
+
+        return (
+          <EuiAccordion
+            key={`group-${index}`}
+            id={`group-${index}`}
+            buttonContent={
+              <EuiFlexGroup alignItems="center" justifyContent="spaceBetween" style={{ padding: '12px' }}>
+                <EuiFlexItem grow={false}>
+                  <EuiText size="s"><strong>Group: {group.name} ({group.rules.length} rules)</strong></EuiText>
+                </EuiFlexItem>
+              </EuiFlexGroup>
+            }
+            initialIsOpen
+          >
+            <EuiInMemoryTable
+              items={group.rules}
+              columns={getColumns(group.name)}
+              itemId={(item) => `${group.name}::${item.name}`}
+              itemIdToExpandedRowMap={expandedMap}
+              pagination={{ initialPageSize: 10, pageSizeOptions: [10, 20, 50, 100] }}
+            />
+            <EuiSpacer size="m" />
+            <EuiHorizontalRule margin="none" />
+          </EuiAccordion>
+        );
+      })}
+    </EuiPanel>
   );
 };
 

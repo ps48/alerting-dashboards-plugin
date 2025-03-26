@@ -36,14 +36,6 @@ const PrometheusDashboard = ({ httpClient, dataConnectionId }) => {
     direction: 'asc',
   });
 
-  // const getGroupKey = (labels) => {
-  //   if (labels.alertname) return labels.alertname;
-  //   const fallback = [labels.additionalProp1, labels.additionalProp2, labels.additionalProp3]
-  //     .filter(Boolean)
-  //     .join("/");
-  //   return fallback || "UnnamedGroup";
-  // };
-
   const getGroupKey = (labels) => {
     if (!labels || typeof labels !== 'object') return 'UnnamedGroup';
     const parts = Object.entries(labels)
@@ -125,16 +117,18 @@ const PrometheusDashboard = ({ httpClient, dataConnectionId }) => {
 
   const toggleDetails = (alert) => {
     const { fingerprint } = alert;
-    setItemIdToExpandedRowMap((prev) => ({
-      ...prev,
-      [fingerprint]: prev[fingerprint] ? undefined : getExpandedRowContent(alert),
-    }));
+    setItemIdToExpandedRowMap((prev) => {
+      const newMap = { ...prev };
+      if (newMap[fingerprint]) delete newMap[fingerprint];
+      else newMap[fingerprint] = getExpandedRowContent(alert);
+      return newMap;
+    });
   };
 
   const getExpandedRowContent = (alert) => {
     const labelKeys = alert.labels ? Object.keys(alert.labels) : [];
     return (
-      <div style={{ padding: "1rem" }}>
+      <div style={{ padding: "1rem", backgroundColor: "#fff" }}>
         <EuiTitle size="s"><h3>Alert details</h3></EuiTitle>
         <EuiSpacer size="m" />
         <EuiDescriptionList type="column" compressed>
@@ -218,13 +212,6 @@ const PrometheusDashboard = ({ httpClient, dataConnectionId }) => {
           type: "icon",
           onClick: (alert) => toggleDetails(alert),
         },
-        // {
-        //   name: "Silence",
-        //   description: "Silence this alert",
-        //   icon: "minusInCircle",
-        //   type: "icon",
-        //   onClick: (alert) => console.log("Silence alert:", alert),
-        // },
       ],
     },
   ];
@@ -265,45 +252,44 @@ const PrometheusDashboard = ({ httpClient, dataConnectionId }) => {
 
         const activeCount = items.filter(a => a.status?.state === "active").length;
 
+        const expandedRowMap = Object.fromEntries(
+          items.map((a) => itemIdToExpandedRowMap[a.fingerprint] ? [a.fingerprint, itemIdToExpandedRowMap[a.fingerprint]] : null).filter(Boolean)
+        );
+
         return (
           <EuiAccordion
             key={`group-${index}`}
             id={`group-${index}`}
-            // buttonProps={{ style: { display: '' } }}
             buttonContent={
-                <EuiFlexGroup
-                  alignItems="center"
-                  justifyContent="spaceBetween"
-                  gutterSize="s"
-                  style={{ padding: '12px' }}
-                  direction="row"
-                >
-                  {/* Left-aligned title */}
-                  <EuiFlexItem grow={3}>
-                    <EuiText size="s"><strong>Grouped by: {groupKey} {`(${items.length})`}</strong></EuiText>
-                  </EuiFlexItem>
-
-                  {/* Right-aligned badges */}
-                  <EuiFlexItem grow={1}>
-                    <EuiFlexGroup gutterSize="xs" direction="row" alignItems="center" responsive={false}>
-                      <EuiFlexItem grow={false}>
-                        <EuiBadge>{items.length} alerts</EuiBadge>
-                      </EuiFlexItem>
-                      <EuiFlexItem grow={false}>
-                        <EuiBadge color="danger">{activeCount} active</EuiBadge>
-                      </EuiFlexItem>
-                    </EuiFlexGroup>
-                  </EuiFlexItem>
-                </EuiFlexGroup>
+              <EuiFlexGroup
+                alignItems="center"
+                justifyContent="spaceBetween"
+                gutterSize="s"
+                style={{ padding: '12px' }}
+                direction="row"
+              >
+                <EuiFlexItem grow={3}>
+                  <EuiText size="s"><strong>Grouped by: {groupKey} {`(${items.length})`}</strong></EuiText>
+                </EuiFlexItem>
+                <EuiFlexItem grow={1}>
+                  <EuiFlexGroup gutterSize="xs" direction="row" alignItems="center" responsive={false}>
+                    <EuiFlexItem grow={false}>
+                      <EuiBadge>{items.length} alerts</EuiBadge>
+                    </EuiFlexItem>
+                    <EuiFlexItem grow={false}>
+                      <EuiBadge color="danger">{activeCount} active</EuiBadge>
+                    </EuiFlexItem>
+                  </EuiFlexGroup>
+                </EuiFlexItem>
+              </EuiFlexGroup>
             }
             initialIsOpen
           >
-            <EuiSpacer size="s" />
             <EuiInMemoryTable
               items={items}
               columns={columns}
               itemId="fingerprint"
-              itemIdToExpandedRowMap={itemIdToExpandedRowMap}
+              itemIdToExpandedRowMap={expandedRowMap}
               pagination={{ initialPageSize: 10, pageSizeOptions: [10, 20, 50, 100] }}
               sorting={{
                 sort: sortConfig,
