@@ -177,7 +177,9 @@ export function dataSourceFilterFn(dataSource) {
   const dataSourceVersion = dataSource?.attributes?.dataSourceVersion || '';
   const installedPlugins = dataSource?.attributes?.installedPlugins || [];
   return (
-    semver.satisfies(dataSourceVersion, pluginManifest.supportedOSDataSourceVersions) &&
+    semver.satisfies(dataSourceVersion, pluginManifest.supportedOSDataSourceVersions, {
+      includePrerelease: true,
+    }) &&
     pluginManifest.requiredOSDataSourcePlugins.every((plugin) => installedPlugins.includes(plugin))
   );
 }
