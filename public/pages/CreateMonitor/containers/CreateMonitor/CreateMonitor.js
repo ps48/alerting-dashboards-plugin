@@ -145,14 +145,19 @@ export default class CreateMonitor extends Component {
     const { initialValues } = this.state;
 
     if (edit) {
-      const schedule = _.get(monitorToEdit, 'schedule', FORMIK_INITIAL_VALUES.period);
+      //const schedule = _.get(monitorToEdit, 'schedule', FORMIK_INITIAL_VALUES.period);
+      const schedule =
+        _.get(monitorToEdit, 'ppl_monitor.schedule') ||
+        _.get(monitorToEdit, 'schedule') ||
+        { period: FORMIK_INITIAL_VALUES.period };
       const scheduleType = _.keys(schedule)[0];
       switch (scheduleType) {
         case 'cron':
           _.set(initialValues, 'frequency', 'cronExpression');
           break;
         default:
-          _.set(initialValues, 'period', schedule.period);
+          //_.set(initialValues, 'period', schedule.period);
+          _.set(initialValues, 'period', schedule.period || FORMIK_INITIAL_VALUES.period);
           break;
       }
 

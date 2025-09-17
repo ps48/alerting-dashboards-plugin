@@ -81,10 +81,11 @@ export const getInitialValues = ({
       ...monitorToFormik(monitorToEdit),
       triggerDefinitions: triggers.triggerDefinitions,
     };
-    const isPpl =
-      initialValues?.query_language === 'ppl' ||
-      monitorToEdit?.query_language === 'ppl' ||
-      !!monitorToEdit?.ppl_monitor;
+  const isPpl =
+    initialValues?.query_language === 'ppl' ||
+    monitorToEdit?.query_language === 'ppl' ||
+    !!monitorToEdit?.ppl_monitor ||
+    !!monitorToEdit?.monitor_v2?.ppl_monitor;
     if (!('monitor_mode' in initialValues)) {
       initialValues.monitor_mode = isPpl ? 'ppl' : 'legacy';
     }
@@ -92,8 +93,8 @@ export const getInitialValues = ({
       initialValues.searchType = 'query';
       initialValues.pplQuery =
         initialValues.pplQuery ||
-        monitorToEdit?.ppl_monitor?.query ||
-        monitorToEdit?.query ||
+        _.get(monitorToEdit, 'ppl_monitor.query') ||
+        _.get(monitorToEdit, 'query') ||
         '';
     }
   }
@@ -496,14 +497,15 @@ export const buildPPLMonitorFromFormik = (values) => {
       ];
 
   // Per API doc, look_back_window applies to CRON schedules. Include only when cron was chosen.
-  const lookBack = buildLookBackFromFormik(values);
+  const isCron = values.frequency === 'cronExpression';
+  const lookBack = isCron ? buildLookBackFromFormik(values) : null;
 
   return {
     ppl_monitor: {
       name: values.name || 'Untitled monitor',
       enabled: !values.disabled,
       schedule: pplToV2Schedule(values),
-      look_back_window: lookBack,
+      ...(isCron && lookBack ? { look_back_window: lookBack } : {}),
       triggers,
       schema_version: 0,
       query_language: 'ppl',
@@ -514,6 +516,7 @@ export const buildPPLMonitorFromFormik = (values) => {
 
 /** Build compact look back window string from Formik values, e.g. "15m" */
 const buildLookBackFromFormik = (values) => {
+  if (values.frequency !== 'cronExpression') return null;
   const enabled = values?.useLookBackWindow ?? true;
   if (!enabled) return null;
   const n = Number(values?.lookBackAmount ?? 1);

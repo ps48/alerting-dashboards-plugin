@@ -4,652 +4,655 @@
  */
 
 import React, { Component } from 'react';
-import PropTypes from 'prop-types';
 import _ from 'lodash';
+import queryString from 'query-string';
 import {
-  EuiAccordion,
-  EuiButton,
-  EuiCallOut,
-  EuiSpacer,
-  EuiText,
-  EuiTitle,
-  EuiFlexGroup,
+  EuiBasicTable,
+  EuiSmallButton,
+  EuiIcon,
+  EuiToolTip,
+  EuiSmallButtonIcon,
   EuiFlexItem,
-  EuiSelect,
-  EuiFieldText,
-  EuiCheckbox,
+  EuiPagination,
+  EuiFlexGroup,
 } from '@elastic/eui';
-import { Field, FieldArray } from 'formik';
-import 'brace/mode/plain_text';
-
-import { FormikFieldText, FormikSelect } from '../../../../components/FormControls';
-import { isInvalid, hasError } from '../../../../utils/validate';
-import TriggerQuery from '../../components/TriggerQuery';
-import TriggerGraph from '../../components/TriggerGraph';
-import { validateTriggerName } from './utils/validation';
-import { OS_NOTIFICATION_PLUGIN, SEARCH_TYPE, SEVERITY_OPTIONS } from '../../../../utils/constants';
-import { AnomalyDetectorTrigger } from './AnomalyDetectorTrigger';
-import { TRIGGER_TYPE } from '../CreateTrigger/utils/constants';
-import ConfigureActions from '../ConfigureActions';
-import monitorToFormik from '../../../CreateMonitor/containers/CreateMonitor/utils/monitorToFormik';
-import { buildRequest } from '../../../CreateMonitor/containers/DefineMonitor/utils/searchRequests';
-import { backendErrorNotification } from '../../../../utils/helpers';
+import ContentPanel from '../../../components/ContentPanel';
+import DashboardEmptyPrompt from '../components/DashboardEmptyPrompt';
+import DashboardControls from '../components/DashboardControls';
+import { alertColumns, queryColumns } from '../utils/tableUtils';
 import {
-  buildClusterMetricsRequest,
-  canExecuteClusterMetricsMonitor,
-} from '../../../CreateMonitor/components/ClusterMetricsMonitor/utils/clusterMetricsMonitorHelpers';
-import { DEFAULT_TRIGGER_NAME } from '../../utils/constants';
-import { getTriggerContext } from '../../utils/helper';
-import { getDataSourceQueryObj } from '../../../utils/helpers';
+  ALERT_STATE,
+  MONITOR_TYPE,
+  OPENSEARCH_DASHBOARDS_AD_PLUGIN,
+} from '../../../utils/constants';
+import { acknowledgeAlerts, backendErrorNotification } from '../../../utils/helpers';
+import {
+  getInitialSize,
+  getQueryObjectFromState,
+  getURLQueryParams,
+  groupAlertsByTrigger,
+  insertGroupByColumn,
+} from '../utils/helpers';
+import { DEFAULT_PAGE_SIZE_OPTIONS } from '../../Monitors/containers/Monitors/utils/constants';
+import { MAX_ALERT_COUNT } from '../utils/constants';
+import AcknowledgeAlertsModal from '../components/AcknowledgeAlertsModal';
+import { getAlertsFindingColumn } from '../components/FindingsDashboard/findingsUtils';
+import { ChainedAlertDetailsFlyout } from '../components/ChainedAlertDetailsFlyout/ChainedAlertDetailsFlyout';
+import { CLUSTER_METRICS_CROSS_CLUSTER_ALERT_TABLE_COLUMN } from '../../CreateMonitor/components/ClusterMetricsMonitor/utils/clusterMetricsMonitorConstants';
+import {
+  getDataSourceQueryObj,
+  isDataSourceChanged,
+  getDataSourceId,
+  appendCommentsAction,
+  getIsCommentsEnabled,
+  getIsAgentConfigured,
+} from '../../utils/helpers';
+import { getUseUpdatedUx } from '../../../services';
 
-/** Normalize PPL preview -> shape that TriggerGraph/TriggerQuery expect */
-const normalizePplPreview = (pplResp, { periodStart, periodEnd } = {}) => {
-  const schema = pplResp?.schema || [];
-  const names = schema.map((c) => c.name);
-  const rows = Array.isArray(pplResp?.datarows) ? pplResp.datarows : [];
-
-  const tsIdx = names.findIndex((n) => /(^@timestamp$|^span$|time|timestamp)/i.test(n));
-  const valIdx = names.findIndex((n) => /(^total$|count$|doc_count$|value$)/i.test(n));
-
-  let buckets = [];
-  if (tsIdx >= 0 && valIdx >= 0 && rows.length) {
-    buckets = rows
-      .map((r) => ({
-        key: typeof r[tsIdx] === 'string' ? Date.parse(r[tsIdx]) : Number(r[tsIdx]),
-        doc_count: Number(r[valIdx]) || 0,
-      }))
-      .filter((b) => Number.isFinite(b.key));
-  } else {
-    const total = Number(pplResp?.total ?? rows.length ?? 0);
-    buckets = [{ key: periodEnd ?? Date.now(), doc_count: total }];
-  }
-
-  const total = Number(pplResp?.total ?? rows.length ?? 0);
-  return {
-    hits: { total: { value: total } },
-    aggregations: { ppl_histogram: { buckets } },
-  };
-};
-
-const defaultRowProps = {
-  label: 'Trigger name',
-  style: { paddingLeft: '10px' },
-  isInvalid,
-  error: hasError,
-};
-
-const defaultInputProps = { isInvalid };
-
-const selectFieldProps = { validate: () => {} };
-
-const selectRowProps = {
-  label: 'Severity level',
-  style: { paddingLeft: '10px', marginTop: '0px' },
-  isInvalid,
-  error: hasError,
-};
-
-const TYPE_OPTIONS = [
-  { value: 'number_of_results', text: 'Number of results' },
-  { value: 'custom', text: 'Custom' },
-];
-
-const triggerOptions = [
-  { value: TRIGGER_TYPE.AD, text: 'Anomaly detector grade and confidence' },
-  { value: TRIGGER_TYPE.ALERT_TRIGGER, text: 'Extraction query response' },
-];
-
-const selectInputProps = { options: SEVERITY_OPTIONS };
-
-const DURATION_OPTIONS = [
-  { value: 'seconds', text: 'second(s)' },
-  { value: 'minutes', text: 'minute(s)' },
-  { value: 'hours', text: 'hour(s)' },
-  { value: 'days', text: 'day(s)' },
-];
-
-const propTypes = {
-  executeResponse: PropTypes.object,
-  monitor: PropTypes.object,
-  monitorValues: PropTypes.object.isRequired,
-  onRun: PropTypes.func.isRequired,
-  setFlyout: PropTypes.func.isRequired,
-  triggers: PropTypes.arrayOf(PropTypes.object).isRequired,
-  triggerValues: PropTypes.object.isRequired,
-  isDarkMode: PropTypes.bool.isRequired,
-  flyoutMode: PropTypes.string,
-  submitCount: PropTypes.number,
-  // commonly present in callers:
-  edit: PropTypes.bool,
-  triggerArrayHelpers: PropTypes.object,
-  triggerIndex: PropTypes.number,
-  httpClient: PropTypes.object,
-  notifications: PropTypes.object,
-  notificationService: PropTypes.object,
-  plugins: PropTypes.arrayOf(PropTypes.string),
-  errors: PropTypes.object,
-};
-
-const defaultProps = { flyoutMode: null };
-
-class DefineTrigger extends Component {
+export default class Dashboard extends Component {
   constructor(props) {
     super(props);
+
+    const { location, perAlertView } = props;
+
+    const { alertState, from, search, severityLevel, size, sortDirection, sortField } =
+      getURLQueryParams(location);
+
+    this.dataSourceQuery = getDataSourceQueryObj();
     this.state = {
-      OuterAccordion: props.flyoutMode ? ({ children }) => <>{children}</> : EuiAccordion,
-      currentSubmitCount: 0,
-      accordionsOpen: {},
-      executeResponse: undefined,
+      alerts: [],
+      alertsByTriggers: [],
+      alertState,
+      flyoutIsOpen: false,
+      loadingMonitors: true,
+      monitors: [],           // normalized: each hit._source === monitor object
+      monitorsById: {},       // { [monitorId]: monitorObject }
+      monitorIds: this.props.monitorIds,
+      page: Math.floor(from / size),
+      search,
+      selectedItems: [],
+      severityLevel,
+      showAlertsModal: false,
+      size: getInitialSize(perAlertView, size),
+      sortDirection,
+      sortField,
+      totalAlerts: 0,
+      totalTriggers: 0,
+      chainedAlert: undefined,
+      commentsEnabled: false,
+      isAgentConfigured: false,
     };
   }
 
+  static defaultProps = {
+    monitorIds: [],
+    detectorIds: [],
+  };
+
   componentDidMount() {
-    const {
-      monitorValues: { searchType, uri },
-    } = this.props;
-    switch (searchType) {
-      case SEARCH_TYPE.CLUSTER_METRICS:
-        if (canExecuteClusterMetricsMonitor(uri)) this.onRunExecute(this.props.monitorValues);
-        break;
-      default:
-        this.onRunExecute(this.props.monitorValues);
+    const { alertState, page, search, severityLevel, size, sortDirection, sortField, monitorIds } =
+      this.state;
+    this.getAlerts(
+      page * size,
+      size,
+      search,
+      sortField,
+      sortDirection,
+      severityLevel,
+      alertState,
+      monitorIds
+    );
+    getIsCommentsEnabled(this.props.httpClient).then((commentsEnabled) => {
+      this.setState({ commentsEnabled });
+    });
+    this.getUpdatedAgentConfig();
+  }
+
+  componentDidUpdate(prevProps, prevState) {
+    const prevQuery = getQueryObjectFromState(prevState);
+    const currQuery = getQueryObjectFromState(this.state);
+    if (!_.isEqual(prevQuery, currQuery)) {
+      this.getUpdatedAgentConfig();
+      this.getUpdatedAlerts();
+    }
+    if (isDataSourceChanged(prevProps, this.props)) {
+      this.dataSourceQuery = getDataSourceQueryObj();
+      this.getUpdatedAgentConfig();
+      this.getUpdatedAlerts();
     }
   }
 
-  onRunExecute = (formikValuesArg, triggers = []) => {
-    const { httpClient, monitor, notifications } = this.props;
-    const formikValues =
-      formikValuesArg || this.props.monitorValues || monitorToFormik(monitor);
-    const searchType = formikValues.searchType;
+  getUpdatedAgentConfig() {
+    const dataSourceId = getDataSourceId();
+    getIsAgentConfigured(dataSourceId).then((isAgentConfigured) => {
+      this.setState({ isAgentConfigured });
+    });
+  }
 
-    const isPPL =
-      monitor?.query_language === 'ppl' ||
-      formikValues?.monitor_mode === 'ppl' ||
-      !!monitor?.ppl_monitor ||
-      !!formikValues?.pplQuery;
+  getUpdatedAlerts() {
+    const { page, size, search, sortField, sortDirection, severityLevel, alertState, monitorIds } =
+      this.state;
+    this.getAlerts(
+      page * size,
+      size,
+      search,
+      sortField,
+      sortDirection,
+      severityLevel,
+      alertState,
+      monitorIds
+    );
+  }
 
-    // --- PPL PREVIEW (NO alerting execute): POST /_plugins/_ppl { query }
-    if (isPPL) {
-      const pplQuery =
-        formikValues?.pplQuery ||
-        monitor?.ppl_monitor?.query ||
-        monitor?.query ||
-        ''; // empty still returns a 400 from PPL
+  getAlerts = _.debounce(
+    (from, size, search, sortField, sortDirection, severityLevel, alertState, monitorIds) => {
+      const dataSourceId = getDataSourceId();
+      const params = {
+        from,
+        size,
+        search,
+        sortField,
+        sortDirection,
+        severityLevel,
+        alertState,
+        monitorIds,
+        monitorType: this.props.monitorType,
+        dataSourceId,
+      };
 
-      const dataSourceQuery = getDataSourceQueryObj();
-      httpClient
-        .post('../_plugins/_ppl', {
-          body: JSON.stringify({ query: pplQuery }),
-          query: dataSourceQuery?.query,
-        })
-        .then((resp) => {
-          if (resp.ok) {
-            const now = Date.now();
-            const normalized = normalizePplPreview(resp.resp, {
-              periodStart: now - 60 * 1000,
-              periodEnd: now,
-            });
-            // Normalize to the shape other UI parts expect
-            const wrapped = {
-              ok: true,
-              period_start: now - 60 * 1000,
-              period_end: now,
-              input_results: { results: [normalized] },
-              error: null,
-            };
-            this.setState({ executeResponse: wrapped });
-          } else {
-            backendErrorNotification(notifications, 'preview', 'query', resp.resp);
+      const queryParamsString = queryString.stringify(params);
+      const { httpClient, history, notifications, perAlertView } = this.props;
+      history.replace({ ...this.props.location, search: queryParamsString });
+      const extendedParams = {
+        ...(dataSourceId !== undefined && { dataSourceId }),
+        ...params,
+      };
+      httpClient.get('../api/alerting/v2/alerts', { query: extendedParams }).then((resp) => {
+        if (resp.ok) {
+          const payload = resp.resp || resp;
+          const alerts = payload.alerts || [];
+          const totalAlerts = payload.totalAlerts ?? payload.total_alerts ?? alerts.length;
+          this.setState({ alerts, totalAlerts });
+
+          if (!perAlertView) {
+            const alertsByTriggers = groupAlertsByTrigger(alerts);
+            this.setState(
+              {
+                totalTriggers: alertsByTriggers.length,
+                alertsByTriggers,
+              },
+              () => this.getMonitors() // fetch monitor docs after grouping
+            );
           }
-        })
-        .catch(() => {});
+        } else {
+          console.log('error getting alerts:', resp);
+          backendErrorNotification(notifications, 'get', 'alerts', resp.err);
+        }
+      });
+    },
+    500,
+    { leading: true }
+  );
+
+  async getMonitors() {
+    const { httpClient } = this.props;
+    const { alertsByTriggers } = this.state;
+    this.setState({ loadingMonitors: true });
+
+    const monitorIds = Array.from(
+      new Set(alertsByTriggers.map((a) => a.monitor_id).filter(Boolean))
+    );
+
+    if (!monitorIds.length) {
+      this.setState({ loadingMonitors: false, monitors: [], monitorsById: {} });
       return;
     }
 
-    // --- Non-PPL path (legacy/other monitor types) ---
-    const monitorToExecute = _.cloneDeep(monitor);
-    _.set(monitorToExecute, 'triggers', triggers);
+    try {
+      // Query v2 monitor docs by ID
+      const body = {
+        query: { ids: { values: monitorIds } },
+        version: true,
+        seq_no_primary_term: true,
+        size: monitorIds.length || 1000,
+      };
 
-    switch (searchType) {
-      case SEARCH_TYPE.QUERY:
-      case SEARCH_TYPE.GRAPH: {
-        const searchRequest = buildRequest(formikValues);
-        _.set(monitorToExecute, 'inputs[0]', searchRequest);
-        break;
+      const response = await httpClient.post('../api/alerting/v2/monitors/_search', {
+        body: JSON.stringify(body),
+        query: this.dataSourceQuery?.query,
+      });
+
+      if (!response.ok) {
+        console.log('error getting monitors:', response);
+        this.setState({ loadingMonitors: false });
+        return;
       }
-      case SEARCH_TYPE.AD:
-        break;
-      case SEARCH_TYPE.CLUSTER_METRICS: {
-        const clusterMetricsRequest = buildClusterMetricsRequest(formikValues);
-        _.set(monitorToExecute, 'inputs[0].uri', clusterMetricsRequest);
-        break;
-      }
-      default:
-        break;
-    }
 
-    const dataSourceQuery = getDataSourceQueryObj();
-    httpClient
-      .post('../api/alerting/monitors/_execute', {
-        body: JSON.stringify(monitorToExecute),
-        query: dataSourceQuery?.query,
-      })
-      .then((resp) => {
-        if (resp.ok) this.setState({ executeResponse: resp.resp });
-        else backendErrorNotification(notifications, 'run', 'trigger', resp.resp);
-      })
-      .catch(() => {});
-  };
+      // Normalize hits so each hit._source is the monitor object itself
+      // (v2 returns { _source: { monitor: {...} } })
+      const normalizedHits = _.get(response, 'resp.hits.hits', []).map((hit) => {
+        const monitorObj = hit._source?.monitor ? hit._source.monitor : hit._source || {};
+        return { ...hit, _source: monitorObj };
+      });
 
-  onAccordionToggle = (key) => {
-    const accordionsOpen = { ...this.state.accordionsOpen };
-    accordionsOpen[key] = !accordionsOpen[key];
-    this.setState({ accordionsOpen, currentSubmitCount: this.props.submitCount });
-  };
+      // Build lookup map: { id -> monitorObject }
+      const monitorsById = normalizedHits.reduce((acc, h) => {
+        acc[h._id] = h._source || {};
+        return acc;
+      }, {});
 
-  // REPLACEMENT UI for Trigger condition when Type = Custom
-  renderCustomCondition = ({ fieldPath, onUpdate }) => (
-    <>
-      <EuiText size="xs">
-        <strong>Trigger condition</strong>
-      </EuiText>
-      <EuiText color="subdued" size="xs">
-        Add a custom condition to append to your existing query.
-      </EuiText>
-      <EuiSpacer size="s" />
-      <EuiFlexGroup gutterSize="s" alignItems="center" responsive={false}>
-        <EuiFlexItem>
-          <Field name={`${fieldPath}customCondition`}>
-            {({ field }) => (
-              <EuiFieldText
-                {...field}
-                value={field.value != null ? field.value : ''}
-                fullWidth
-                placeholder="eg: (eval result = count > 3)"
-                data-test-subj="customConditionInput"
-              />
-            )}
-          </Field>
-        </EuiFlexItem>
-        <EuiFlexItem grow={false}>
-          <EuiButton size="s" onClick={onUpdate} data-test-subj="updateResults">
-            Update results
-          </EuiButton>
-        </EuiFlexItem>
-      </EuiFlexGroup>
-      <EuiSpacer size="xs" />
-      <EuiText color="subdued" size="xs">
-        condition should be limited to supported functions.
-      </EuiText>
-    </>
-  );
+      // Optionally enrich existing grouped rows with monitor_name for immediate rendering
+      const enrichedAlertsByTriggers = this.state.alertsByTriggers.map((row) => ({
+        ...row,
+        monitor_name: monitorsById[row.monitor_id]?.name || row.monitor_id,
+      }));
 
-  render() {
-    const { OuterAccordion, accordionsOpen, currentSubmitCount, executeResponse } = this.state;
-    const {
-      edit,
-      triggerArrayHelpers,
-      monitor,
-      monitorValues,
-      onRun,
-      setFlyout,
-      triggers,
-      triggerValues,
-      isDarkMode,
-      triggerIndex,
-      httpClient,
-      notifications,
-      notificationService,
-      plugins,
-      flyoutMode,
-      submitCount,
-      errors,
-    } = this.props;
-
-    const hasNotificationPlugin = plugins?.indexOf(OS_NOTIFICATION_PLUGIN) !== -1;
-    const ctxExec = executeResponse ?? this.props.executeResponse;
-    const context = getTriggerContext(ctxExec, monitor, triggerValues, triggerIndex);
-
-    const fieldPath = triggerIndex !== undefined ? `triggerDefinitions[${triggerIndex}].` : '';
-    const isGraphLegacy = _.get(monitorValues, 'searchType') === SEARCH_TYPE.GRAPH;
-    const isAd = _.get(monitorValues, 'searchType') === SEARCH_TYPE.AD;
-
-    const detectorId = _.get(monitorValues, 'detectorId');
-    const response = _.get(ctxExec, 'input_results.results[0]');
-    const error = _.get(ctxExec, 'error') || _.get(ctxExec, 'input_results.error');
-
-    const thresholdEnum = _.get(triggerValues, `${fieldPath}thresholdEnum`);
-    const thresholdValue = _.get(triggerValues, `${fieldPath}thresholdValue`);
-    const adTriggerType = _.get(triggerValues, `${fieldPath}anomalyDetector.triggerType`);
-    const triggerName = _.get(triggerValues, `${fieldPath}name`, DEFAULT_TRIGGER_NAME);
-
-    if (flyoutMode && submitCount > currentSubmitCount) {
       this.setState({
-        accordionsOpen: {
-          ...accordionsOpen,
-          triggerCondition:
-            accordionsOpen?.metrics ||
-            (errors.triggerDefinitions?.[triggerIndex] &&
-              'name' in errors.triggerDefinitions?.[triggerIndex]),
+        loadingMonitors: false,
+        monitors: normalizedHits,
+        monitorsById,
+        alertsByTriggers: enrichedAlertsByTriggers,
+      });
+    } catch (err) {
+      console.error(err);
+      this.setState({ loadingMonitors: false });
+    }
+  }
+
+  acknowledgeAlerts = async (alerts) => {
+    const { httpClient, notifications } = this.props;
+    await Promise.all(acknowledgeAlerts(httpClient, notifications, alerts));
+  };
+
+  // TODO: exists in both Dashboard and Monitors, should be moved to redux when implemented
+  acknowledgeAlert = async () => {
+    const { selectedItems } = this.state;
+    const { perAlertView } = this.props;
+
+    if (!selectedItems.length) return;
+
+    let selectedAlerts = perAlertView ? selectedItems : _.get(selectedItems, '0.alerts', []);
+    await this.acknowledgeAlerts(selectedAlerts);
+
+    this.setState({ selectedItems: [] });
+    const { page, size, search, sortField, sortDirection, severityLevel, alertState, monitorIds } =
+      this.state;
+    this.getAlerts(
+      page * size,
+      size,
+      search,
+      sortField,
+      sortDirection,
+      severityLevel,
+      alertState,
+      monitorIds
+    );
+    this.refreshDashboard();
+  };
+
+  onTableChange = ({ page: tablePage = {}, sort = {} }) => {
+    const { index: page, size } = tablePage;
+    const { field: sortField, direction: sortDirection } = sort;
+    this.setState({ page, size, sortField, sortDirection });
+  };
+
+  onSeverityLevelChange = (e) => {
+    this.setState({ page: 0, severityLevel: e.target.value });
+  };
+
+  onAlertStateChange = (e) => {
+    this.setState({ page: 0, alertState: e.target.value });
+  };
+
+  onSelectionChange = (selectedItems) => {
+    this.setState({ selectedItems });
+  };
+
+  onSearchChange = (e) => {
+    this.setState({ page: 0, search: e.target.value });
+  };
+
+  onPageClick = (page) => {
+    this.setState({ page });
+  };
+
+  openFlyout = (payload) => {
+    this.setState({ flyoutIsOpen: true });
+    if (!_.isEmpty(payload)) {
+      this.props.setFlyout({
+        type: 'alertsDashboard',
+        payload: {
+          ...payload,
+          openChainedAlertsFlyout: this.openChainedAlertsFlyout,
+          closeFlyout: this.closeFlyout,
         },
-        currentSubmitCount: submitCount,
       });
     }
+  };
 
-    // figure out current type
-    const selectedType =
-      _.get(triggerValues, `${fieldPath}uiConditionType`) ||
-      _.get(triggerValues, `${fieldPath}type`) ||
-      _.get(triggerValues, `${fieldPath}conditionType`) ||
-      _.get(triggerValues, `${fieldPath}condition?.type`) ||
-      'number_of_results';
+  openChainedAlertsFlyout = (chainedAlert) => {
+    this.setState({ chainedAlert });
+  };
 
-    const isPpl =
-      monitor?.query_language === 'ppl' || monitorValues?.monitor_mode === 'ppl';
+  closeChainedAlertsFlyout = () => {
+    this.setState({ chainedAlert: undefined });
+  };
 
-    // Show graph if:
-    //  - native Graph monitor, OR
-    //  - PPL + "number_of_results" type, OR
-    //  - the normalized PPL buckets are present on the response
-    const hasPplBuckets =
-      _.get(response, 'aggregations.ppl_histogram.buckets.length', 0) > 0 ||
-      _.get(response, 'aggregations.count_over_time.buckets.length', 0) > 0;
-    const isGraph = isGraphLegacy || (isPpl && selectedType === 'number_of_results') || hasPplBuckets;
+  closeFlyout = () => {
+    const { setFlyout } = this.props;
+    if (typeof setFlyout === 'function') setFlyout(null);
+    this.setState({ flyoutIsOpen: false });
+  };
 
-    // Name
-    const nameField = (
-      <FormikFieldText
-        name={`${fieldPath}name`}
-        fieldProps={{
-          validate: (val) =>
-            validateTriggerName(triggerValues?.triggerDefinitions, triggerIndex, flyoutMode)(val),
-        }}
-        formRow
-        rowProps={{ ...defaultRowProps, ...(flyoutMode ? { style: {} } : {}) }}
-        inputProps={defaultInputProps}
-      />
+  refreshDashboard = () => {
+    const { page, size, search, sortField, sortDirection, severityLevel, alertState, monitorIds } =
+      this.state;
+    this.getAlerts(
+      page * size,
+      size,
+      search,
+      sortField,
+      sortDirection,
+      severityLevel,
+      alertState,
+      monitorIds
     );
+  };
 
-    // Severity
-    const severityField = (
-      <FormikSelect
-        name={`${fieldPath}severity`}
-        formRow
-        fieldProps={selectFieldProps}
-        rowProps={{ ...selectRowProps, ...(flyoutMode ? { style: {} } : {}) }}
-        inputProps={selectInputProps}
-      />
-    );
+  openModal = () => {
+    this.setState({ ...this.state, showAlertsModal: true });
+  };
 
-    // Type
-    const typeField = (
-      <div style={{ paddingLeft: '10px' }}>
-        <EuiText size="xs">
-          <h5 style={{ margin: 0 }}>Type</h5>
-        </EuiText>
-        <Field name={`${fieldPath}uiConditionType`}>
-          {({ field, form }) => {
-            const derived =
-              field.value ||
-              _.get(triggerValues, `${fieldPath}type`) ||
-              _.get(triggerValues, `${fieldPath}conditionType`) ||
-              _.get(triggerValues, `${fieldPath}condition?.type`) ||
-              'number_of_results';
-            return (
-              <EuiSelect
-                options={TYPE_OPTIONS}
-                value={derived}
-                onChange={(e) => {
-                  const v = e.target.value;
-                  form.setFieldValue(`${fieldPath}uiConditionType`, v);
-                  form.setFieldValue(`${fieldPath}type`, v);
-                  form.setFieldValue(`${fieldPath}conditionType`, v);
-                  form.setFieldValue(`${fieldPath}condition`, {
-                    ...(_.get(triggerValues, `${fieldPath}condition`) || {}),
-                    type: v,
-                  });
-                }}
-                data-test-subj="triggerType"
-              />
-            );
-          }}
-        </Field>
-      </div>
-    );
+  closeModal = () => {
+    this.setState({ ...this.state, search: '', showAlertsModal: false });
+    this.refreshDashboard();
+  };
 
-    // Build the section that lives where the Trigger condition row is.
-    let triggerConditionSection;
-    if (isAd && adTriggerType === TRIGGER_TYPE.AD) {
-      const adValues = _.get(triggerValues, `${fieldPath}anomalyDetector`);
-      triggerConditionSection = (
-        <AnomalyDetectorTrigger
-          detectorId={detectorId}
-          adValues={adValues}
-          fieldPath={fieldPath}
-          flyoutMode={flyoutMode}
-        />
-      );
-    } else if (isGraph) {
-      // GRAPH or PPL(Number of results): show graph; if Custom, show textbox+graph
-      const showCustom = selectedType === 'custom';
-      const graphEl = (
-        // NOTE: TriggerGraph should be able to read buckets from aggregations.ppl_histogram.buckets
-        <TriggerGraph
-          monitorValues={monitorValues}
-          response={response}
-          thresholdEnum={thresholdEnum}
-          thresholdValue={thresholdValue}
-          fieldPath={fieldPath}
-          flyoutMode={flyoutMode}
-          hideThresholdControls={showCustom}
-          showModeSelector={selectedType === 'number_of_results'}
-        />
-      );
+  renderModal = () => {
+    const { history, httpClient, location, notifications } = this.props;
+    const { monitors, selectedItems } = this.state;
+    const { monitor_id, triggerID, trigger_name } = selectedItems[0];
 
-      triggerConditionSection = showCustom ? (
-        <>
-          {this.renderCustomCondition({
-            fieldPath,
-            onUpdate: _.isEmpty(fieldPath)
-              ? () => onRun(this.props.monitorValues)
-              : () => this.onRunExecute(this.props.monitorValues),
-          })}
-          <EuiSpacer size="m" />
-          {graphEl}
-        </>
-      ) : (
-        graphEl
-      );
-    } else {
-      // QUERY-level monitors (non-graph): swap UI based on Type
-      triggerConditionSection =
-        selectedType === 'custom' ? (
-          this.renderCustomCondition({
-            fieldPath,
-            onUpdate: _.isEmpty(fieldPath)
-              ? () => onRun(this.props.monitorValues)
-              : () => this.onRunExecute(this.props.monitorValues),
-          })
-        ) : (
-          <TriggerQuery
-            context={context}
-            error={error}
-            executeResponse={ctxExec}
-            onRun={
-              _.isEmpty(fieldPath)
-                ? () => onRun(this.props.monitorValues)
-                : () => this.onRunExecute(this.props.monitorValues)
-            }
-            response={response}
-            setFlyout={setFlyout}
-            triggerValues={triggerValues}
-            isDarkMode={isDarkMode}
-            fieldPath={fieldPath}
-            isAd={isAd}
-          />
-        );
-    }
-
-    // Suppress / Expires
-    const suppressEnabled =
-      _.get(triggerValues, `${fieldPath}suppressEnabled`) === true ||
-      _.get(triggerValues, `${fieldPath}suppress?.enabled`) === true;
-
-    const suppressToggle = (
-      <div style={{ paddingLeft: '10px' }}>
-        <Field name={`${fieldPath}suppressEnabled`}>
-          {({ field, form }) => (
-            <EuiCheckbox
-              id={`${fieldPath}__suppressEnabled`}
-              label="Suppress"
-              checked={!!field.value}
-              onChange={(e) => {
-                const checked = e.target.checked;
-                form.setFieldValue(`${fieldPath}suppressEnabled`, checked);
-                form.setFieldValue(`${fieldPath}suppress`, {
-                  ...(_.get(triggerValues, `${fieldPath}suppress`) || {}),
-                  enabled: checked,
-                });
-              }}
-            />
-          )}
-        </Field>
-      </div>
-    );
+    // After normalization, hit._source is the monitor object itself
+    const monitor = _.get(_.find(monitors, { _id: monitor_id }), '_source');
 
     return (
-      <OuterAccordion
-        id={triggerName}
-        buttonContent={
-          <EuiTitle size={'s'} data-test-subj={`${fieldPath}_triggerAccordion`}>
-            <h1>{_.isEmpty(triggerName) ? DEFAULT_TRIGGER_NAME : triggerName}</h1>
-          </EuiTitle>
-        }
-        initialIsOpen={edit ? false : triggerIndex === 0}
-        extraAction={
-          <EuiButton color={'danger'} onClick={() => triggerArrayHelpers.remove(triggerIndex)} size={'s'}>
-            Remove trigger
-          </EuiButton>
-        }
-        style={{ paddingBottom: '15px', paddingTop: '10px' }}
-      >
-        <div style={flyoutMode ? {} : { padding: '0px 20px', paddingTop: '20px' }}>
-          {!flyoutMode && (
-            <>
-              {nameField}
-              <EuiSpacer size="m" />
-            </>
-          )}
+      <AcknowledgeAlertsModal
+        history={history}
+        httpClient={httpClient}
+        location={location}
+        monitor={monitor}
+        monitorId={monitor_id}
+        notifications={notifications}
+        onClose={this.closeModal}
+        triggerId={triggerID}
+        triggerName={trigger_name}
+        acknowledgeAlerts={this.acknowledgeAlerts}
+      />
+    );
+  };
 
-          {/* Severity + Type */}
-          <EuiFlexGroup gutterSize="m" style={{ paddingLeft: flyoutMode ? 0 : 10 }}>
-            <EuiFlexItem grow={false} style={{ width: 240 }}>
-              {severityField}
-            </EuiFlexItem>
-            <EuiFlexItem grow={false} style={{ width: 260 }}>
-              {typeField}
-            </EuiFlexItem>
-          </EuiFlexGroup>
+  render() {
+    const {
+      alerts,
+      alertsByTriggers,
+      alertState,
+      chainedAlert,
+      flyoutIsOpen,
+      loadingMonitors,
+      monitors,
+      page,
+      search,
+      selectedItems,
+      severityLevel,
+      size,
+      sortDirection,
+      sortField,
+      totalAlerts,
+      totalTriggers,
+      commentsEnabled,
+      isAgentConfigured,
+    } = this.state;
+    const {
+      monitorIds,
+      detectorIds,
+      onCreateTrigger,
+      perAlertView,
+      monitorType,
+      groupBy,
+      setFlyout,
+      httpClient,
+      location,
+      history,
+      notifications,
+      isAlertsFlyout = false,
+    } = this.props;
+    let totalItems = perAlertView ? totalAlerts : totalTriggers;
+    const isBucketMonitor = monitorType === MONITOR_TYPE.BUCKET_LEVEL;
 
-          <EuiSpacer size="m" />
+    let columns;
+    if (perAlertView) {
+      switch (monitorType) {
+        case MONITOR_TYPE.BUCKET_LEVEL:
+          columns = insertGroupByColumn(groupBy);
+          break;
+        case MONITOR_TYPE.CLUSTER_METRICS:
+          columns = _.cloneDeep(queryColumns);
+          columns.push(CLUSTER_METRICS_CROSS_CLUSTER_ALERT_TABLE_COLUMN);
+          break;
+        case MONITOR_TYPE.DOC_LEVEL:
+          columns = _.cloneDeep(queryColumns);
+          columns.splice(
+            0,
+            0,
+            getAlertsFindingColumn(
+              httpClient,
+              history,
+              location,
+              notifications,
+              flyoutIsOpen,
+              this.openFlyout,
+              this.closeFlyout
+            )
+          );
+          break;
+        case MONITOR_TYPE.COMPOSITE_LEVEL:
+          columns = _.cloneDeep(queryColumns);
+          columns.push({
+            name: 'Actions',
+            sortable: false,
+            actions: [
+              {
+                render: (alert) => (
+                  <EuiToolTip content={'View details'}>
+                    <EuiSmallButtonIcon
+                      aria-label={'View details'}
+                      data-test-subj={`view-details-icon`}
+                      iconType={'inspect'}
+                      onClick={() => {
+                        this.openChainedAlertsFlyout(alert);
+                      }}
+                    />
+                  </EuiToolTip>
+                ),
+              },
+            ],
+          });
+          break;
+        default:
+          columns = _.cloneDeep(queryColumns);
+          break;
+      }
 
-          {/* Trigger condition area (replaced when Type = Custom) */}
-          {triggerConditionSection}
+      if (commentsEnabled) {
+        columns = appendCommentsAction(columns, httpClient);
+      }
+    } else {
+      // alertColumns consumes `monitors` to show monitor **names**.
+      // We pass the normalized list so names resolve for v2 docs.
+      columns = alertColumns(
+        history,
+        httpClient,
+        loadingMonitors,
+        location,
+        monitors,
+        notifications,
+        isAgentConfigured,
+        setFlyout,
+        this.openFlyout,
+        this.closeFlyout,
+        this.refreshDashboard
+      );
+    }
 
-          <EuiSpacer size="l" />
+    const pagination = {
+      pageIndex: page,
+      pageSize: size,
+      totalItemCount: Math.min(MAX_ALERT_COUNT, totalItems),
+      pageSizeOptions: DEFAULT_PAGE_SIZE_OPTIONS,
+    };
 
-          {/* Suppress */}
-          {suppressToggle}
+    const sorting = {
+      sort: {
+        direction: sortDirection,
+        field: sortField,
+      },
+    };
 
-          {suppressEnabled && (
-            <>
-              <EuiSpacer size="s" />
-              <EuiFlexGroup gutterSize="s" style={{ paddingLeft: '10px' }}>
-                <EuiFlexItem grow={false} style={{ width: 120 }}>
-                  <FormikFieldText
-                    name={`${fieldPath}suppress.value`}
-                    formRow
-                    rowProps={{ label: 'Suppress for' }}
-                    inputProps={{ type: 'number', min: 1 }}
-                  />
-                </EuiFlexItem>
-                <EuiFlexItem grow={false} style={{ width: 180 }}>
-                  <FormikSelect
-                    name={`${fieldPath}suppress.unit`}
-                    formRow
-                    rowProps={{ label: ' ' }}
-                    inputProps={{ options: DURATION_OPTIONS }}
-                  />
-                </EuiFlexItem>
-              </EuiFlexGroup>
-            </>
-          )}
+    const selection = {
+      onSelectionChange: this.onSelectionChange,
+      selectable: perAlertView
+        ? (item) => item.state === ALERT_STATE.ACTIVE
+        : (item) => item.ACTIVE > 0,
+      selectableMessage: perAlertView
+        ? (selectable) => (selectable ? undefined : 'Only active alerts can be acknowledged.')
+        : (selectable) =>
+            selectable ? undefined : 'Only triggers with active alerts can be acknowledged.',
+    };
 
-          {/* Expires */}
-          <EuiSpacer size="s" />
-          <EuiFlexGroup gutterSize="s" style={{ paddingLeft: '10px' }}>
-            <EuiFlexItem grow={false} style={{ width: 120 }}>
-              <FormikFieldText
-                name={`${fieldPath}expires.value`}
-                formRow
-                rowProps={{ label: 'Expires' }}
-                inputProps={{ type: 'number', min: 1 }}
+    const actions = () => {
+      const actions = [
+        <EuiSmallButton
+          onClick={perAlertView ? this.acknowledgeAlert : this.openModal}
+          disabled={perAlertView ? !selectedItems.length : selectedItems.length !== 1}
+          data-test-subj={'acknowledgeAlertsButton'}
+        >
+          Acknowledge
+        </EuiSmallButton>,
+      ];
+
+      if (!perAlertView) {
+        const alert = selectedItems[0];
+        actions.unshift(
+          <EuiSmallButton
+            onClick={() => {
+              this.openFlyout({
+                ...alert,
+                history,
+                httpClient,
+                loadingMonitors,
+                location,
+                monitors,
+                notifications,
+                setFlyout,
+                closeFlyout: this.closeFlyout,
+                refreshDashboard: this.refreshDashboard,
+              });
+            }}
+            disabled={selectedItems.length !== 1}
+          >
+            View alert details
+          </EuiSmallButton>
+        );
+      }
+
+      if (detectorIds.length) {
+        actions.unshift(
+          <EuiSmallButton
+            href={`${OPENSEARCH_DASHBOARDS_AD_PLUGIN}#/detectors/${detectorIds[0]}`}
+            target="_blank"
+          >
+            View detector <EuiIcon type="popout" />
+          </EuiSmallButton>
+        );
+      }
+      return actions;
+    };
+
+    const getItemId = (item) => {
+      if (perAlertView) return isBucketMonitor ? item.id : `${item.id}-${item.version}`;
+      return `${item.triggerID}-${item.version}`;
+    };
+
+    const useUpdatedUx = !perAlertView && getUseUpdatedUx();
+    const shouldShowPagination = !perAlertView && totalAlerts > 0;
+
+    return (
+      <>
+        {chainedAlert && (
+          <ChainedAlertDetailsFlyout
+            httpClient={httpClient}
+            closeFlyout={this.closeChainedAlertsFlyout}
+            alert={chainedAlert}
+          />
+        )}
+        <ContentPanel
+          title={perAlertView ? 'Alerts' : useUpdatedUx ? undefined : 'Alerts by triggers'}
+          titleSize={'s'}
+          bodyStyles={{ padding: 'initial' }}
+          actions={useUpdatedUx ? undefined : actions()}
+          panelOptions={{ hideTitleBorder: useUpdatedUx }}
+          panelStyles={{ padding: useUpdatedUx && totalAlerts < 1 ? '16px 16px 0px' : '16px' }}
+        >
+          <DashboardControls
+            activePage={page}
+            pageCount={Math.ceil(totalItems / size) || 1}
+            search={search}
+            severity={severityLevel}
+            state={alertState}
+            onSearchChange={this.onSearchChange}
+            onSeverityChange={this.onSeverityLevelChange}
+            onStateChange={this.onAlertStateChange}
+            onPageChange={this.onPageClick}
+            isAlertsFlyout={isAlertsFlyout}
+            monitorType={monitorType}
+            alertActions={useUpdatedUx ? actions() : undefined}
+            panelStyles={{ padding: perAlertView ? '8px 0px 16px' : '0px 0px 16px' }}
+          />
+
+          <EuiBasicTable
+            items={perAlertView ? alerts : alertsByTriggers}
+            itemId={getItemId}
+            columns={columns}
+            pagination={perAlertView ? pagination : undefined}
+            sorting={sorting}
+            isSelectable={true}
+            selection={selection}
+            onChange={this.onTableChange}
+            noItemsMessage={
+              <DashboardEmptyPrompt
+                onCreateTrigger={onCreateTrigger}
+                landingDataSourceId={this.props.landingDataSourceId}
               />
-            </EuiFlexItem>
-            <EuiFlexItem grow={false} style={{ width: 180 }}>
-              <FormikSelect
-                name={`${fieldPath}expires.unit`}
-                formRow
-                rowProps={{ label: ' ' }}
-                inputProps={{ options: DURATION_OPTIONS }}
-              />
-            </EuiFlexItem>
-          </EuiFlexGroup>
+            }
+            data-test-subj={'alertsDashboard_table'}
+          />
 
-          {/* Notifications */}
-          <EuiSpacer size="l" />
-          <EuiTitle size="xs">
-            <h5>Notifications</h5>
-          </EuiTitle>
-          <EuiSpacer size="m" />
-
-          {((flyoutMode && hasNotificationPlugin) || !flyoutMode) && (
-            <FieldArray name={`${fieldPath}actions`} validateOnChange>
-              {(arrayHelpers) => (
-                <ConfigureActions
-                  arrayHelpers={arrayHelpers}
-                  context={context}
-                  httpClient={httpClient}
-                  setFlyout={setFlyout}
-                  values={triggerValues}
-                  notifications={notifications}
-                  fieldPath={fieldPath}
-                  triggerIndex={triggerIndex}
-                  notificationService={notificationService}
-                  plugins={plugins}
-                  flyoutMode={flyoutMode}
-                  submitCount={submitCount}
-                  errors={errors}
+          {shouldShowPagination && (
+            <EuiFlexGroup justifyContent="flexEnd" style={{ padding: '8px 0px 0px' }}>
+              <EuiFlexItem grow={false}>
+                <EuiPagination
+                  pageCount={Math.ceil(totalItems / size) || 1}
+                  activePage={page}
+                  onPageClick={this.onPageClick}
                 />
-              )}
-            </FieldArray>
+              </EuiFlexItem>
+            </EuiFlexGroup>
           )}
 
-          {!hasNotificationPlugin && (
-            <>
-              <EuiCallOut title="The Notifications plugin is not installed" color="warning">
-                <p>Alerts still appear on the dashboard visualization when the trigger condition is met.</p>
-              </EuiCallOut>
-              <EuiSpacer size="m" />
-            </>
-          )}
-        </div>
-      </OuterAccordion>
+          {this.state.showAlertsModal && this.renderModal()}
+        </ContentPanel>
+      </>
     );
   }
 }
-
-DefineTrigger.propTypes = propTypes;
-DefineTrigger.defaultProps = defaultProps;
-
-export default DefineTrigger;
