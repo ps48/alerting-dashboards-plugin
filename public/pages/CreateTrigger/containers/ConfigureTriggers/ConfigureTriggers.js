@@ -126,6 +126,8 @@ class ConfigureTriggers extends React.Component {
         const numOfTriggers = _.get(this.props.triggerValues, 'triggerDefinitions', []).length;
         if (numOfTriggers > 0 && canExecuteClusterMetricsMonitor(uri)) this.onRunExecute();
         break;
+      default:
+        break;
     }
   };
 
@@ -159,6 +161,50 @@ class ConfigureTriggers extends React.Component {
     const { httpClient, monitor, notifications } = this.props;
     const formikValues = monitorToFormik(monitor);
     const searchType = formikValues.searchType;
+
+    const isPPL =
+      monitor?.query_language === 'ppl' ||
+      formikValues?.monitor_mode === 'ppl' ||
+      !!monitor?.ppl_monitor ||
+      !!formikValues?.pplQuery;
+
+    // PPL PREVIEW (NO alerting execute)
+    if (isPPL) {
+      const pplQuery =
+        monitor?.ppl_monitor?.query ||
+        monitor?.query ||
+        formikValues?.pplQuery ||
+        '';
+
+      const dataSourceQuery = getDataSourceQueryObj();
+      httpClient
+        .post('../_plugins/_ppl', {
+          body: JSON.stringify({ query: pplQuery }),
+          query: dataSourceQuery?.query,
+        })
+        .then((resp) => {
+          if (resp.ok) {
+            const now = Date.now();
+            const wrapped = {
+              ok: true,
+              period_start: now - 60 * 1000,
+              period_end: now,
+              input_results: { results: [resp.resp] },
+              error: null,
+            };
+            this.setState({ executeResponse: wrapped });
+          } else {
+            console.error('err:', resp);
+            backendErrorNotification(notifications, 'preview', 'query', resp.resp);
+          }
+        })
+        .catch((err) => {
+          console.log('err:', err);
+        });
+      return;
+    }
+
+    // Non-PPL fallback
     const monitorToExecute = _.cloneDeep(monitor);
     _.set(monitorToExecute, 'triggers', triggers);
 
@@ -186,7 +232,6 @@ class ConfigureTriggers extends React.Component {
         if (resp.ok) {
           this.setState({ executeResponse: resp.resp });
         } else {
-          // TODO: need a notification system to show errors or banners at top
           console.error('err:', resp);
           backendErrorNotification(notifications, 'run', 'trigger', resp.resp);
         }
@@ -395,37 +440,45 @@ class ConfigureTriggers extends React.Component {
     }
 
     return hasTriggers
-      ? triggerValues.triggerDefinitions.map((trigger, index) => (
-          <div key={trigger.id}>
-            <TriggerContainer
-              {...{
-                id: `configure-trigger__${trigger.id}`,
-                isOpen: accordionsOpen[index],
-                onToggle: () => this.onAccordionToggle(index),
-                title: (
-                  <EuiFlexGroup alignItems="center" justifyContent="flexStart" gutterSize="s">
-                    <EuiFlexItem grow={false}>{trigger.name}</EuiFlexItem>
-                    <EuiFlexItem grow={false}>
-                      <EuiBadge color="hollow">SEV{trigger.severity}</EuiBadge>
-                    </EuiFlexItem>
-                  </EuiFlexGroup>
-                ),
-                extraAction: (
-                  <EuiSmallButtonIcon
-                    iconType="trash"
-                    color="text"
-                    aria-label={`Delete ${trigger.name}`}
-                    onClick={() => triggerArrayHelpers.remove(index)}
-                  />
-                ),
-              }}
-            >
-              {triggerContent(triggerArrayHelpers, index)}
-            </TriggerContainer>
-            {!flyoutMode && <EuiHorizontalRule margin={'s'} />}
-            {flyoutMode && <EuiSpacer size="m" />}
-          </div>
-        ))
+      ? triggerValues.triggerDefinitions.map((trigger, index) => {
+          // Use a stable key to avoid React key warnings even when id is missing.
+          const stableKey = trigger?.id || trigger?.name || `trigger-${index}`;
+          const containerId = `configure-trigger__${stableKey}`;
+          const sevLabel = trigger?.severity != null ? String(trigger.severity).toUpperCase() : '';
+          return (
+            <div key={stableKey}>
+              <TriggerContainer
+                {...{
+                  id: containerId,
+                  isOpen: accordionsOpen[index],
+                  onToggle: () => this.onAccordionToggle(index),
+                  title: (
+                    <EuiFlexGroup alignItems="center" justifyContent="flexStart" gutterSize="s">
+                      <EuiFlexItem grow={false}>
+                        {trigger?.name || 'New trigger'}
+                      </EuiFlexItem>
+                      <EuiFlexItem grow={false}>
+                        <EuiBadge color="hollow">{sevLabel ? `SEV ${sevLabel}` : 'SEV'}</EuiBadge>
+                      </EuiFlexItem>
+                    </EuiFlexGroup>
+                  ),
+                  extraAction: (
+                    <EuiSmallButtonIcon
+                      iconType="trash"
+                      color="text"
+                      aria-label={`Delete ${trigger?.name || 'trigger'}`}
+                      onClick={() => triggerArrayHelpers.remove(index)}
+                    />
+                  ),
+                }}
+              >
+                {triggerContent(triggerArrayHelpers, index)}
+              </TriggerContainer>
+              {!flyoutMode && <EuiHorizontalRule margin={'s'} />}
+              {flyoutMode && <EuiSpacer size="m" />}
+            </div>
+          );
+        })
       : !flyoutMode && triggerEmptyPrompt;
   };
 

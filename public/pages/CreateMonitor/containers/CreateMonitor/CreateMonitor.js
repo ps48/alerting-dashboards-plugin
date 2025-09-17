@@ -35,6 +35,7 @@ import {
   EuiContextMenuItem,
   EuiIconTip,
   EuiBadge,
+  EuiCheckbox,              // NEW
 } from '@elastic/eui';
 
 import DefineMonitor from '../DefineMonitor';
@@ -77,6 +78,10 @@ export default class CreateMonitor extends Component {
     const { location, edit, monitorToEdit } = props;
     const initialValues = {
       monitor_mode: 'legacy',
+      // NEW: sensible defaults for look back UI in PPL flow
+      useLookBackWindow: true,
+      lookBackAmount: 1,
+      lookBackUnit: 'hours', // seconds | minutes | hours | days
       ...getInitialValues({ location, monitorToEdit, edit }),
     };
 
@@ -150,6 +155,30 @@ export default class CreateMonitor extends Component {
           _.set(initialValues, 'period', schedule.period);
           break;
       }
+
+      // If monitor already has a look_back_window, pre-fill our UI
+      const lbw =
+        monitorToEdit?.look_back_window ||
+        monitorToEdit?.ppl_monitor?.look_back_window ||
+        null;
+      if (typeof lbw === 'string' && lbw.trim()) {
+        const match = lbw.trim().match(/^(\d+)\s*([smhd])$/i);
+        if (match) {
+          const amount = Number(match[1]);
+          const unitShort = match[2].toLowerCase();
+          const unit =
+            unitShort === 's'
+              ? 'seconds'
+              : unitShort === 'm'
+              ? 'minutes'
+              : unitShort === 'h'
+              ? 'hours'
+              : 'days';
+          _.set(initialValues, 'useLookBackWindow', true);
+          _.set(initialValues, 'lookBackAmount', Number.isFinite(amount) ? amount : 1);
+          _.set(initialValues, 'lookBackUnit', unit);
+        }
+      }
     }
   };
 
@@ -199,7 +228,7 @@ export default class CreateMonitor extends Component {
       return;
     }
 
-    // legacy 
+    // legacy
     submit({
       values,
       formikBag,
@@ -230,10 +259,12 @@ export default class CreateMonitor extends Component {
         schedule: { period: { interval: 1, unit: 'MINUTES' } },
         inputs: [{ search: { indices: [], query: { match_all: {} } } }],
         ui_metadata: {
-          search: { searchType: 'ppl' }, // <- important for trigger UI assumptions
+          // Treat trigger UI as "query" so legacy assumptions in DefineTrigger don't explode.
+          search: { searchType: 'query' },
           triggers: {},
         },
-        triggers: [], // trigger UI manages values.triggerDefinitions; keep this empty
+        // keep legacy trigger slot empty; the UI binds to values.triggerDefinitions
+        triggers: [],
       };
     }
 
@@ -400,51 +431,132 @@ export default class CreateMonitor extends Component {
     </>
   );
 
-  renderPplScheduleBody = (values, setFieldValue) => (
-    <>
-      <EuiFormRow label="Frequency">
-        <EuiSelect
-          data-test-subj="pplFrequency"
-          options={[
-            { value: 'interval', text: 'By interval' },
-            { value: 'daily', text: 'Daily' },
-            { value: 'weekly', text: 'Weekly' },
-            { value: 'monthly', text: 'Monthly' },
-            { value: 'cronExpression', text: 'Cron expression' },
-          ]}
-          value={values.frequency}
-          onChange={(e) => setFieldValue('frequency', e.target.value)}
-        />
-      </EuiFormRow>
+  // ---- NEW: PPL Schedule UI with look back window for Interval & Cron ----
+  renderPplScheduleBody = (values, setFieldValue) => {
+    const useLB = values.useLookBackWindow ?? true;
+    const lbAmount = Number(values.lookBackAmount ?? 1);
+    const lbUnit = values.lookBackUnit || 'hours';
 
-      {values.frequency === 'interval' && (
-        <EuiFormRow label="Run every">
-          <EuiFlexGroup gutterSize="s" alignItems="center" responsive={false}>
-            <EuiFlexItem grow={false} style={{ width: 140 }}>
-              <EuiFieldNumber
-                data-test-subj="pplIntervalValue"
-                min={1}
-                value={values.period?.interval ?? 1}
-                onChange={(e) => setFieldValue('period.interval', Number(e.target.value) || 1)}
-              />
-            </EuiFlexItem>
-            <EuiFlexItem grow={false} style={{ width: 200 }}>
-              <EuiSelect
-                data-test-subj="pplIntervalUnit"
-                options={[
-                  { value: 'MINUTES', text: 'minute(s)' },
-                  { value: 'HOURS', text: 'hour(s)' },
-                  { value: 'DAYS', text: 'day(s)' },
-                ]}
-                value={values.period?.unit || 'MINUTES'}
-                onChange={(e) => setFieldValue('period.unit', e.target.value)}
-              />
-            </EuiFlexItem>
-          </EuiFlexGroup>
+    const LookBackControls = (
+      <>
+        <EuiFormRow>
+          <EuiCheckbox
+            id="useLookBackWindow"
+            label="Add look back window"
+            checked={useLB}
+            onChange={(e) => setFieldValue('useLookBackWindow', e.target.checked)}
+            data-test-subj="pplUseLookBack"
+          />
         </EuiFormRow>
-      )}
-    </>
-  );
+
+        {useLB && (
+          <EuiFormRow label="Look back from">
+            <EuiFlexGroup gutterSize="s" alignItems="center" responsive={false}>
+              <EuiFlexItem grow={false} style={{ width: 140 }}>
+                <EuiFieldNumber
+                  data-test-subj="pplLookBackAmount"
+                  min={1}
+                  value={lbAmount}
+                  onChange={(e) =>
+                    setFieldValue('lookBackAmount', Math.max(1, Number(e.target.value) || 1))
+                  }
+                />
+              </EuiFlexItem>
+
+              <EuiFlexItem grow={false} style={{ width: 220 }}>
+                <EuiSelect
+                  data-test-subj="pplLookBackUnit"
+                  options={[
+                    { value: 'seconds', text: 'Second(s) ago' },
+                    { value: 'minutes', text: 'Minute(s) ago' },
+                    { value: 'hours', text: 'Hour(s) ago' },
+                    { value: 'days', text: 'Day(s) ago' },
+                  ]}
+                  value={lbUnit}
+                  onChange={(e) => setFieldValue('lookBackUnit', e.target.value)}
+                />
+              </EuiFlexItem>
+            </EuiFlexGroup>
+          </EuiFormRow>
+        )}
+      </>
+    );
+
+    return (
+      <>
+        <EuiFormRow label="Frequency">
+          <EuiSelect
+            data-test-subj="pplFrequency"
+            options={[
+              { value: 'interval', text: 'By interval' },
+              { value: 'daily', text: 'Daily' },
+              { value: 'weekly', text: 'Weekly' },
+              { value: 'monthly', text: 'Monthly' },
+              { value: 'cronExpression', text: 'Custom cron job' }, 
+            ]}
+            value={values.frequency}
+            onChange={(e) => setFieldValue('frequency', e.target.value)}
+          />
+        </EuiFormRow>
+
+        {values.frequency === 'interval' && (
+          <>
+            <EuiFormRow label="Run every">
+              <EuiFlexGroup gutterSize="s" alignItems="center" responsive={false}>
+                <EuiFlexItem grow={false} style={{ width: 140 }}>
+                  <EuiFieldNumber
+                    data-test-subj="pplIntervalValue"
+                    min={1}
+                    value={values.period?.interval ?? 1}
+                    onChange={(e) => setFieldValue('period.interval', Number(e.target.value) || 1)}
+                  />
+                </EuiFlexItem>
+                <EuiFlexItem grow={false} style={{ width: 200 }}>
+                  <EuiSelect
+                    data-test-subj="pplIntervalUnit"
+                    options={[
+                      { value: 'MINUTES', text: 'minute(s)' },
+                      { value: 'HOURS', text: 'hour(s)' },
+                      { value: 'DAYS', text: 'day(s)' },
+                    ]}
+                    value={values.period?.unit || 'MINUTES'}
+                    onChange={(e) => setFieldValue('period.unit', e.target.value)}
+                  />
+                </EuiFlexItem>
+              </EuiFlexGroup>
+            </EuiFormRow>
+
+            {/* NEW: look back window for interval */}
+            {LookBackControls}
+          </>
+        )}
+
+        {values.frequency === 'cronExpression' && (
+          <>
+            {/* NEW: Cron text box + helper text */}
+            <EuiFormRow label="Run every">
+              <EuiTextArea
+                data-test-subj="pplCronExpression"
+                value={values.cronExpression || ''}
+                onChange={(e) => setFieldValue('cronExpression', e.target.value)}
+                placeholder="0 */1 * * *"
+                rows={2}
+              />
+            </EuiFormRow>
+            <EuiText size="xs" color="subdued">
+              Use cron expressions for complex schedules
+            </EuiText>
+
+            <EuiSpacer size="m" />
+
+            {/* NEW: look back window for cron */}
+            {LookBackControls}
+          </>
+        )}
+      </>
+    );
+  };
+  // ---- END NEW ----
 
   renderStepPanel = ({ id, title, children, initialIsOpen = true }) => (
     <EuiPanel hasBorder paddingSize="none">
@@ -540,7 +652,7 @@ export default class CreateMonitor extends Component {
                           children: this.renderStepPanel({
                             id: 'pplStep3',
                             title: 'Schedule',
-                            children: this.renderPplScheduleBody(values, setFieldValue),
+                            children: this.renderPplScheduleBody(values, setFieldValue), // UPDATED
                           }),
                         },
                         {

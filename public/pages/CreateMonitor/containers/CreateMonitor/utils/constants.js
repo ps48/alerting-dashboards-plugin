@@ -53,6 +53,8 @@ export const FORMIK_INITIAL_VALUES = {
   pplQuery: '',              // <-- new editor value for PPL mode
   pplPreviewResult: null,    // <-- optional, for Preview panel state
   pplPreviewError: null,     // <-- optional, for Preview error state
+  suppress: { enabled: false, value: 24, unit: 'hours' },
+  expires:  { value: 24, unit: 'hours' },
   clusterNames: [],
   uri: {
     api_type: '',

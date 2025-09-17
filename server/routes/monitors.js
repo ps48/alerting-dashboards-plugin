@@ -22,31 +22,50 @@ export default function (services, router, dataSourceEnabled) {
   router.get(
     {
       path: '/api/alerting/monitors',
-      validate: {
-        query: createValidateQuerySchema(dataSourceEnabled, fieldValidations),
-      },
+      validate: { query: createValidateQuerySchema(dataSourceEnabled, fieldValidations) },
     },
     monitorService.getMonitors
   );
 
+  // ---------- NEW: data-source–aware proxy for SQL/PPL ----------
+  // Matches the required format:
+  //   POST /_plugins/_ppl
+  //   { "query": "<PPL text>" }
   router.post(
     {
-      path: '/api/alerting/monitors/_search',
+      path: '/_plugins/_ppl',
       validate: {
         body: schema.any(),
         query: createValidateQuerySchema(dataSourceEnabled),
       },
     },
-    monitorService.searchMonitors
+    monitorService.pplQuery
+  );
+  // --------------------------------------------------------------
+
+  // v2 search
+  router.post(
+    {
+      path: '/api/alerting/v2/monitors/_search',
+      validate: { body: schema.any(), query: createValidateQuerySchema(dataSourceEnabled) },
+    },
+    monitorService.searchMonitorsV2
+  );
+
+  // ⚠️ Keep this legacy URL working for callers like Dashboard & others;
+  // we forward to the same v2 search handler under the hood.
+  router.post(
+    {
+      path: '/api/alerting/monitors/_search',
+      validate: { body: schema.any(), query: createValidateQuerySchema(dataSourceEnabled) },
+    },
+    monitorService.searchMonitorsV2
   );
 
   router.post(
     {
       path: '/api/alerting/monitors',
-      validate: {
-        body: schema.any(),
-        query: createValidateQuerySchema(dataSourceEnabled),
-      },
+      validate: { body: schema.any(), query: createValidateQuerySchema(dataSourceEnabled) },
     },
     monitorService.createMonitor
   );
@@ -54,18 +73,16 @@ export default function (services, router, dataSourceEnabled) {
   router.post(
     {
       path: '/api/alerting/v2/monitors',
-      validate: {
-        body: schema.any(),
-        query: createValidateQuerySchema(dataSourceEnabled),
-      },
+      validate: { body: schema.any(), query: createValidateQuerySchema(dataSourceEnabled) },
     },
     monitorService.createPPLMonitor
   );
 
-  router.post(
+  router.put(
     {
       path: '/api/alerting/v2/monitors/{id}',
       validate: {
+        params: schema.object({ id: schema.string() }),
         body: schema.any(),
         query: createValidateQuerySchema(dataSourceEnabled),
       },
@@ -77,7 +94,7 @@ export default function (services, router, dataSourceEnabled) {
     {
       path: '/api/alerting/v2/monitors/{id}',
       validate: {
-        body: schema.any(),
+        params: schema.object({ id: schema.string() }),
         query: createValidateQuerySchema(dataSourceEnabled),
       },
     },
@@ -88,7 +105,7 @@ export default function (services, router, dataSourceEnabled) {
     {
       path: '/api/alerting/v2/monitors/{id}',
       validate: {
-        body: schema.any(),
+        params: schema.object({ id: schema.string() }),
         query: createValidateQuerySchema(dataSourceEnabled),
       },
     },
@@ -97,19 +114,9 @@ export default function (services, router, dataSourceEnabled) {
 
   router.post(
     {
-      path: '/api/alerting/v2/monitors/_search',
-      validate: {
-        body: schema.any(),
-        query: createValidateQuerySchema(dataSourceEnabled),
-      },
-    },
-    monitorService.searchPPLMonitor
-  );
-
-  router.post(
-    {
       path: '/api/alerting/v2/monitors/{id}/_execute',
       validate: {
+        params: schema.object({ id: schema.string() }),
         body: schema.any(),
         query: createValidateQuerySchema(dataSourceEnabled),
       },
@@ -120,10 +127,7 @@ export default function (services, router, dataSourceEnabled) {
   router.post(
     {
       path: '/api/alerting/v2/monitors/_execute',
-      validate: {
-        body: schema.any(),
-        query: createValidateQuerySchema(dataSourceEnabled),
-      },
+      validate: { body: schema.any(), query: createValidateQuerySchema(dataSourceEnabled) },
     },
     monitorService.executePPLMonitor
   );
@@ -131,10 +135,7 @@ export default function (services, router, dataSourceEnabled) {
   router.get(
     {
       path: '/api/alerting/v2/alerts',
-      validate: {
-        body: schema.any(),
-        query: createValidateQuerySchema(dataSourceEnabled),
-      },
+      validate: { query: createValidateQuerySchema(dataSourceEnabled) },
     },
     monitorService.alertsPPLMonitor
   );
@@ -142,14 +143,12 @@ export default function (services, router, dataSourceEnabled) {
   router.post(
     {
       path: '/api/alerting/workflows',
-      validate: {
-        body: schema.any(),
-        query: createValidateQuerySchema(dataSourceEnabled),
-      },
+      validate: { body: schema.any(), query: createValidateQuerySchema(dataSourceEnabled) },
     },
     monitorService.createWorkflow
   );
 
+  // legacy execute endpoint still exposed by UI; server auto-routes to v2 when needed
   router.post(
     {
       path: '/api/alerting/monitors/_execute',
@@ -167,9 +166,7 @@ export default function (services, router, dataSourceEnabled) {
     {
       path: '/api/alerting/workflows/{id}',
       validate: {
-        params: schema.object({
-          id: schema.string(),
-        }),
+        params: schema.object({ id: schema.string() }),
         query: createValidateQuerySchema(dataSourceEnabled),
       },
     },
@@ -180,9 +177,7 @@ export default function (services, router, dataSourceEnabled) {
     {
       path: '/api/alerting/monitors/{id}',
       validate: {
-        params: schema.object({
-          id: schema.string(),
-        }),
+        params: schema.object({ id: schema.string() }),
         query: createValidateQuerySchema(dataSourceEnabled),
       },
     },
@@ -198,9 +193,7 @@ export default function (services, router, dataSourceEnabled) {
     {
       path: '/api/alerting/monitors/{id}',
       validate: {
-        params: schema.object({
-          id: schema.string(),
-        }),
+        params: schema.object({ id: schema.string() }),
         body: schema.any(),
         query: createValidateQuerySchema(dataSourceEnabled, fieldValidationForMonitors),
       },
@@ -212,9 +205,7 @@ export default function (services, router, dataSourceEnabled) {
     {
       path: '/api/alerting/workflows/{id}',
       validate: {
-        params: schema.object({
-          id: schema.string(),
-        }),
+        params: schema.object({ id: schema.string() }),
         query: createValidateQuerySchema(dataSourceEnabled, fieldValidationForMonitors),
         body: schema.any(),
       },
@@ -226,12 +217,9 @@ export default function (services, router, dataSourceEnabled) {
     {
       path: '/api/alerting/monitors/{id}',
       validate: {
-        params: schema.object({
-          id: schema.string(),
-        }),
-        query: createValidateQuerySchema(dataSourceEnabled, {
-          version: schema.number(),
-        }),
+        params: schema.object({ id: schema.string() }),
+        // ⬇️ Make version optional so the same route can delete v2 monitors (no version) or legacy (with version).
+        query: createValidateQuerySchema(dataSourceEnabled, { version: schema.maybe(schema.number()) }),
       },
     },
     monitorService.deleteMonitor
@@ -241,12 +229,9 @@ export default function (services, router, dataSourceEnabled) {
     {
       path: '/api/alerting/workflows/{id}',
       validate: {
-        params: schema.object({
-          id: schema.string(),
-        }),
-        query: createValidateQuerySchema(dataSourceEnabled, {
-          version: schema.number(),
-        }),
+        params: schema.object({ id: schema.string() }),
+        // ⬇️ Same here.
+        query: createValidateQuerySchema(dataSourceEnabled, { version: schema.maybe(schema.number()) }),
       },
     },
     monitorService.deleteWorkflow
@@ -256,9 +241,7 @@ export default function (services, router, dataSourceEnabled) {
     {
       path: '/api/alerting/monitors/{id}/_acknowledge/alerts',
       validate: {
-        params: schema.object({
-          id: schema.string(),
-        }),
+        params: schema.object({ id: schema.string() }),
         body: schema.any(),
         query: createValidateQuerySchema(dataSourceEnabled),
       },
@@ -270,9 +253,7 @@ export default function (services, router, dataSourceEnabled) {
     {
       path: '/api/alerting/workflows/{id}/_acknowledge/alerts',
       validate: {
-        params: schema.object({
-          id: schema.string(),
-        }),
+        params: schema.object({ id: schema.string() }),
         body: schema.any(),
         query: createValidateQuerySchema(dataSourceEnabled),
       },

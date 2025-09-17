@@ -4,6 +4,7 @@
  */
 
 import React from 'react';
+import PropTypes from 'prop-types';
 import { EuiSpacer } from '@elastic/eui';
 import VisualGraph from '../../CreateMonitor/components/VisualGraph';
 import TriggerExpressions from './TriggerExpressions';
@@ -15,19 +16,25 @@ const TriggerGraph = ({
   thresholdEnum,
   fieldPath,
   flyoutMode,
+  hideThresholdControls = false, // NEW: when true, hide the comparator/value UI
 }) => (
   <div style={flyoutMode ? {} : { padding: '0px 10px' }}>
-    <TriggerExpressions
-      thresholdValue={thresholdValue}
-      thresholdEnum={thresholdEnum}
-      keyFieldName={`${fieldPath}thresholdEnum`}
-      valueFieldName={`${fieldPath}thresholdValue`}
-      label="Trigger condition"
-      flyoutMode={flyoutMode}
-    />
+    {/* Hide the old TriggerExpressions when using Custom type */}
+    {!hideThresholdControls && (
+      <TriggerExpressions
+        thresholdValue={thresholdValue}
+        thresholdEnum={thresholdEnum}
+        keyFieldName={`${fieldPath}thresholdEnum`}
+        valueFieldName={`${fieldPath}thresholdValue`}
+        label="Trigger condition"
+        flyoutMode={flyoutMode}
+      />
+    )}
+
     {!flyoutMode && (
       <>
-        <EuiSpacer size="m" />
+        {/* If TriggerExpressions were hidden, keep spacing consistent when showing the graph */}
+        {!hideThresholdControls && <EuiSpacer size="m" />}
         <VisualGraph
           annotation
           values={monitorValues}
@@ -38,5 +45,16 @@ const TriggerGraph = ({
     )}
   </div>
 );
+
+TriggerGraph.propTypes = {
+  monitorValues: PropTypes.object,
+  response: PropTypes.any,
+  thresholdValue: PropTypes.any,
+  thresholdEnum: PropTypes.any,
+  fieldPath: PropTypes.string,
+  flyoutMode: PropTypes.bool,
+  /** When true, suppress the comparator/value UI so Custom type can take over */
+  hideThresholdControls: PropTypes.bool,
+};
 
 export default TriggerGraph;

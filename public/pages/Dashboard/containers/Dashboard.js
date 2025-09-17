@@ -45,7 +45,7 @@ import {
   getDataSourceId,
   appendCommentsAction,
   getIsCommentsEnabled,
-  getIsAgentConfigured
+  getIsAgentConfigured,
 } from '../../utils/helpers';
 import { getUseUpdatedUx } from '../../../services';
 
@@ -65,7 +65,8 @@ export default class Dashboard extends Component {
       alertState,
       flyoutIsOpen: false,
       loadingMonitors: true,
-      monitors: [],
+      monitors: [],           // normalized: each hit._source === monitor object
+      monitorsById: {},       // { [monitorId]: monitorObject }
       monitorIds: this.props.monitorIds,
       page: Math.floor(from / size),
       search,
@@ -163,8 +164,8 @@ export default class Dashboard extends Component {
       const { httpClient, history, notifications, perAlertView } = this.props;
       history.replace({ ...this.props.location, search: queryParamsString });
       const extendedParams = {
-        ...(dataSourceId !== undefined && { dataSourceId }), // Only include dataSourceId if it exists
-        ...params, // Other parameters
+        ...(dataSourceId !== undefined && { dataSourceId }),
+        ...params,
       };
       httpClient.get('../api/alerting/alerts', { query: extendedParams }).then((resp) => {
         if (resp.ok) {
@@ -173,11 +174,13 @@ export default class Dashboard extends Component {
 
           if (!perAlertView) {
             const alertsByTriggers = groupAlertsByTrigger(alerts);
-            this.setState({
-              totalTriggers: alertsByTriggers.length,
-              alertsByTriggers,
-            });
-            this.getMonitors();
+            this.setState(
+              {
+                totalTriggers: alertsByTriggers.length,
+                alertsByTriggers,
+              },
+              () => this.getMonitors() // fetch monitor docs after grouping
+            );
           }
         } else {
           console.log('error getting alerts:', resp);
@@ -192,36 +195,66 @@ export default class Dashboard extends Component {
   async getMonitors() {
     const { httpClient } = this.props;
     const { alertsByTriggers } = this.state;
-    this.setState({ ...this.state, loadingMonitors: true });
+    this.setState({ loadingMonitors: true });
+
     const monitorIds = Array.from(
-      new Set(alertsByTriggers.map((alert) => alert.monitor_id).filter((monitorId) => !!monitorId))
+      new Set(alertsByTriggers.map((a) => a.monitor_id).filter(Boolean))
     );
-    let monitors;
+
+    if (!monitorIds.length) {
+      this.setState({ loadingMonitors: false, monitors: [], monitorsById: {} });
+      return;
+    }
+
     try {
-      const params = {
-        query: {
-          query: {
-            ids: {
-              values: monitorIds,
-            },
-          },
-        },
+      // Query v2 monitor docs by ID
+      const body = {
+        query: { ids: { values: monitorIds } },
+        version: true,
+        seq_no_primary_term: true,
+        size: monitorIds.length || 1000,
       };
 
-      const response = await httpClient.post('../api/alerting/monitors/_search', {
-        body: JSON.stringify(params),
+      const response = await httpClient.post('../api/alerting/v2/monitors/_search', {
+        body: JSON.stringify(body),
         query: this.dataSourceQuery?.query,
       });
 
-      if (response.ok) {
-        monitors = _.get(response, 'resp.hits.hits', []);
-      } else {
+      if (!response.ok) {
         console.log('error getting monitors:', response);
+        this.setState({ loadingMonitors: false });
+        return;
       }
+
+      // Normalize hits so each hit._source is the monitor object itself
+      // (v2 returns { _source: { monitor: {...} } })
+      const normalizedHits = _.get(response, 'resp.hits.hits', []).map((hit) => {
+        const monitorObj = hit._source?.monitor ? hit._source.monitor : hit._source || {};
+        return { ...hit, _source: monitorObj };
+      });
+
+      // Build lookup map: { id -> monitorObject }
+      const monitorsById = normalizedHits.reduce((acc, h) => {
+        acc[h._id] = h._source || {};
+        return acc;
+      }, {});
+
+      // Optionally enrich existing grouped rows with monitor_name for immediate rendering
+      const enrichedAlertsByTriggers = this.state.alertsByTriggers.map((row) => ({
+        ...row,
+        monitor_name: monitorsById[row.monitor_id]?.name || row.monitor_id,
+      }));
+
+      this.setState({
+        loadingMonitors: false,
+        monitors: normalizedHits,
+        monitorsById,
+        alertsByTriggers: enrichedAlertsByTriggers,
+      });
     } catch (err) {
       console.error(err);
+      this.setState({ loadingMonitors: false });
     }
-    this.setState({ ...this.state, loadingMonitors: false, monitors: monitors });
   }
 
   acknowledgeAlerts = async (alerts) => {
@@ -337,7 +370,10 @@ export default class Dashboard extends Component {
     const { history, httpClient, location, notifications } = this.props;
     const { monitors, selectedItems } = this.state;
     const { monitor_id, triggerID, trigger_name } = selectedItems[0];
+
+    // After normalization, hit._source is the monitor object itself
     const monitor = _.get(_.find(monitors, { _id: monitor_id }), '_source');
+
     return (
       <AcknowledgeAlertsModal
         history={history}
@@ -450,6 +486,8 @@ export default class Dashboard extends Component {
         columns = appendCommentsAction(columns, httpClient);
       }
     } else {
+      // alertColumns consumes `monitors` to show monitor **names**.
+      // We pass the normalized list so names resolve for v2 docs.
       columns = alertColumns(
         history,
         httpClient,
@@ -491,7 +529,6 @@ export default class Dashboard extends Component {
     };
 
     const actions = () => {
-      // The acknowledge button is disabled when viewing by per alerts, and no item selected or per trigger view and item selected is not 1.
       const actions = [
         <EuiSmallButton
           onClick={perAlertView ? this.acknowledgeAlert : this.openModal}
@@ -583,11 +620,6 @@ export default class Dashboard extends Component {
 
           <EuiBasicTable
             items={perAlertView ? alerts : alertsByTriggers}
-            /*
-             * If using just ID, doesn't update selectedItems when doing acknowledge
-             * because the next getAlerts have the same id
-             * $id-$version will correctly remove selected items
-             * */
             itemId={getItemId}
             columns={columns}
             pagination={perAlertView ? pagination : undefined}

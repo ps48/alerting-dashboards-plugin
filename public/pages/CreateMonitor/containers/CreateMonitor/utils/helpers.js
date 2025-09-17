@@ -44,7 +44,7 @@ export const getInitialValues = ({
   const params = queryString.parse(location.search);
   if (params?.mode === 'ppl') {
     initialValues.monitor_mode = 'ppl';
-    initialValues.searchType = 'query'; // not used by ppl, but avoids legacy assumptions
+    initialValues.searchType = 'query'; // keep legacy UIs happy
   }
 
   if (flyoutMode) {
@@ -88,7 +88,6 @@ const getMetricAgg = (embeddable) => {
   if (embeddable?.vis?.data?.aggs?.aggs.length === 1) {
     const agg = embeddable.vis.data.aggs.aggs[0];
     if (agg.schema === 'metric' && !(aggregationType && fieldName) && agg.params.field) {
-      console.log(agg);
       aggregationType = agg.__type.dslName;
       fieldName = agg.params.field.spec.name;
     }
@@ -197,24 +196,24 @@ export const create = async ({
       body: JSON.stringify(monitor),
       query: dataSourceQuery?.query,
     });
-    setSubmitting(false);
-    const {
-      ok,
-      resp: { _id },
-    } = resp;
-    if (ok) {
-      history.push(`/monitors/${_id}?type=${isWorkflow ? 'workflow' : 'monitor'}`);
+
+    if (resp.ok) {
+      // IMPORTANT: end the Formik submit state BEFORE navigating to avoid setState on unmounted
+      setSubmitting(false);
+
+      history.push(`/monitors/${resp.resp._id}?type=${isWorkflow ? 'workflow' : 'monitor'}`);
 
       if (onSuccess) {
-        onSuccess({ monitor: { _id, ...monitor } });
+        onSuccess({ monitor: { _id: resp.resp._id, ...monitor } });
       }
     } else {
+      setSubmitting(false);
       console.log('Failed to create:', resp);
       backendErrorNotification(notifications, 'create', 'monitor', resp.resp);
     }
   } catch (err) {
     console.error(err);
-    setSubmitting(false);
+    formikBag.setSubmitting(false);
   }
 };
 
@@ -277,6 +276,7 @@ export const submit = ({
 
 /**
  * Small service wrapper that calls the server (proxy) API for V2 routes.
+ * (Preview is handled via /_plugins/_ppl; only create/update live here.)
  */
 export const makeAlertingV2Service = (httpClient) => {
   const base = '../api/alerting/v2';
@@ -287,46 +287,30 @@ export const makeAlertingV2Service = (httpClient) => {
   };
 
   return {
-    /** Create a PPL MonitorV2 */
+    /** Create a PPL Monitor V2 */
     createMonitor: async (body, { dataSourceId } = {}) => {
       const query = withDataSource();
       if (dataSourceId) query['dataSourceId'] = dataSourceId;
-      console.log("createmonitor body:", JSON.stringify(body));
-      return httpClient.post(`${base}/monitors`, {
+      const r = await httpClient.post(`${base}/monitors`, {
         body: JSON.stringify(body),
         query,
-      }).then((r) => {
-        if (!r.ok) throw r.resp || r;
-        return r.resp;
       });
+      if (!r.ok) throw r.resp || r;
+      return r.resp;
     },
 
-    /** Update an existing PPL MonitorV2 */
+    /** Update an existing PPL Monitor V2 */
     updateMonitor: async (id, body, { ifSeqNo, ifPrimaryTerm, dataSourceId } = {}) => {
       const query = withDataSource();
       if (dataSourceId) query['dataSourceId'] = dataSourceId;
       if (Number.isFinite(ifSeqNo)) query['if_seq_no'] = ifSeqNo;
       if (Number.isFinite(ifPrimaryTerm)) query['if_primary_term'] = ifPrimaryTerm;
-      return httpClient.put(`${base}/monitors/${encodeURIComponent(id)}`, {
+      const r = await httpClient.put(`${base}/monitors/${encodeURIComponent(id)}`, {
         body: JSON.stringify(body),
         query,
-      }).then((r) => {
-        if (!r.ok) throw r.resp || r;
-        return r.resp;
       });
-    },
-
-    /** Run a lightweight PPL preview (query-only) */
-    previewPPL: async (queryText, { dataSourceId } = {}) => {
-      const query = withDataSource();
-      if (dataSourceId) query['dataSourceId'] = dataSourceId;
-      return httpClient.post(`${base}/preview`, {
-        body: JSON.stringify({ query: queryText }),
-        query,
-      }).then((r) => {
-        if (!r.ok) throw r.resp || r;
-        return r.resp;
-      });
+      if (!r.ok) throw r.resp || r;
+      return r.resp;
     },
   };
 };
@@ -358,7 +342,7 @@ export const pplToV2Schedule = (values) => {
   };
 };
 
-/** Convert a triggerDefinition from Formik -> ppl_trigger payload */
+/** Convert a triggerDefinition from Formik -> ppl trigger payload */
 const formikPplTriggerToWire = (t, i = 0) => {
   const normalizeSeverity = (s) => {
     const v = String(s ?? '').toLowerCase();
@@ -371,54 +355,84 @@ const formikPplTriggerToWire = (t, i = 0) => {
     return 'info';
   };
 
-  const type = (t?.conditionType || t?.type || 'number_of_results');
+  const unitCode = (u) => {
+    const v = String(u || '').toLowerCase();
+    if (v.startsWith('second')) return 's';
+    if (v.startsWith('minute')) return 'm';
+    if (v.startsWith('hour')) return 'h';
+    if (v.startsWith('day')) return 'd';
+    return 'h';
+  };
+
+  const packDur = (val, unit) => {
+    const n = Number(val);
+    if (!Number.isFinite(n) || n <= 0) return null;
+    return `${n}${unitCode(unit)}`;
+  };
+
+  const type = (t?.uiConditionType || t?.type || t?.conditionType || 'number_of_results').toLowerCase();
   const isNum = type === 'number_of_results';
+
+  const suppress =
+    t?.suppress ??
+    (t?.suppressEnabled ? packDur(t?.suppress?.value, t?.suppress?.unit) : null);
+
+  const expires =
+    t?.expires ??
+    (t?.expires?.value ? packDur(t?.expires?.value, t?.expires?.unit) : null) ??
+    '7d';
 
   return {
     name: t?.name || `trigger${i + 1}`,
     severity: normalizeSeverity(t?.severity),
-    actions: t?.actions || [],
-    mode: t?.mode || 'result_set',                   // 'result_set' | 'per_result'
-    type,                                            // 'number_of_results' | 'custom'
-    num_results_condition: isNum ? (t?.numResultsOp || t?.operator || '>=') : null,
-    num_results_value: isNum ? Number(t?.numResultsValue ?? t?.value ?? 1) : null,
-    custom_condition: !isNum ? (t?.customCondition || null) : null,
-    suppress: t?.suppress ?? null,
-    expires: t?.expires || '7d',
+    actions: Array.isArray(t?.actions) ? t.actions : [],
+    mode: (t?.mode || 'result_set').toLowerCase(), // 'result_set' | 'per_result'
+    type, // 'number_of_results' | 'custom'
+    num_results_condition: isNum ? (t?.num_results_condition || t?.thresholdEnum || '>=') : null,
+    num_results_value: isNum ? Number(t?.num_results_value ?? t?.thresholdValue ?? 1) : null,
+    custom_condition: !isNum ? (t?.custom_condition || t?.customCondition || null) : null,
+    suppress,
+    expires,
     last_triggered_time: null,
   };
 };
 
 /**
- * Build the MonitorV2 (PPL) payload expected by backend.
- * Shape: { "monitor_v2": { "ppl_monitor": { ... } } }
+ * Build the Monitor V2 (PPL) payload expected by backend.
+ * Shape: { "ppl_monitor": { ... } }
  */
 export const buildPPLMonitorFromFormik = (values) => {
   const defs = Array.isArray(values.triggerDefinitions) ? values.triggerDefinitions : [];
   const triggers = defs.length
     ? defs.map(formikPplTriggerToWire)
-    : [{
-        name: 'trigger1',
-        severity: 'info',
-        actions: [],
-        mode: 'result_set',
-        type: 'number_of_results',
-        num_results_condition: '>=',
-        num_results_value: 1,
-        custom_condition: null,
-        suppress: null,
-        expires: '7d',
-        last_triggered_time: null,
-      }];
+    : [
+        {
+          name: 'trigger1',
+          severity: 'info',
+          actions: [],
+          mode: 'result_set',
+          type: 'number_of_results',
+          num_results_condition: '>=',
+          num_results_value: 1,
+          custom_condition: null,
+          suppress: null,
+          expires: '7d',
+          last_triggered_time: null,
+        },
+      ];
+
+  // Per API doc, look_back_window applies to CRON schedules. Include only when cron was chosen.
+  const lookBack =
+    values.frequency === 'cronExpression'
+      ? values.lookBackWindow || values.look_back_window || null
+      : null;
 
   return {
     ppl_monitor: {
       name: values.name || 'Untitled monitor',
       enabled: !values.disabled,
       schedule: pplToV2Schedule(values),
-      look_back_window: values.frequency === 'cronExpression'
-        ? (values.lookBackWindow || null)
-        : null,
+      look_back_window: lookBack,
       triggers,
       schema_version: 0,
       query_language: 'ppl',
@@ -427,10 +441,22 @@ export const buildPPLMonitorFromFormik = (values) => {
   };
 };
 
-/** Convenience: run preview via service */
-export const runPPLPreview = async (httpClient, { queryText, dataSourceId }) => {
-  const api = makeAlertingV2Service(httpClient);
-  return api.previewPPL(queryText, { dataSourceId });
+/**
+ * Preview PPL by calling the PPL endpoint directly:
+ * POST /_plugins/_ppl { query: "<PPL string>" }
+ * Returns the raw PPL response. Callers can wrap it into an execute-like shape if needed.
+ */
+export const runPPLPreview = async (httpClient, { queryText, dataSourceId } = {}) => {
+  const dataSourceQuery = getDataSourceQueryObj();
+  const query = { ...(dataSourceQuery?.query || {}) };
+  if (dataSourceId) query['dataSourceId'] = dataSourceId;
+
+  const resp = await httpClient.post('../_plugins/_ppl', {
+    body: JSON.stringify({ query: queryText || '' }),
+    query,
+  });
+  if (!resp.ok) throw resp.resp || resp;
+  return resp.resp;
 };
 
 /** Create or update a PPL MonitorV2 */
@@ -457,55 +483,22 @@ export const submitPPL = async ({
         ifPrimaryTerm: primary,
         dataSourceId,
       });
+      // end submit BEFORE routing to avoid "setState on unmounted" warning
+      setSubmitting(false);
       notifications.toasts.addSuccess(`Monitor "${values.name}" saved.`);
-      history.push(`/monitors/${monitorToEdit._id}`);
+      history.push(`/monitors/${monitorToEdit._id}?type=monitor`);
     } else {
-      console.log("body:", body);
-      const res = await api.createMonitor(body, { dataSourceId });
+      await api.createMonitor(body, { dataSourceId });
+      // end submit BEFORE routing to avoid "setState on unmounted" warning
+      setSubmitting(false);
       notifications.toasts.addSuccess(`Monitor "${values.name}" successfully created.`);
-      history.push(`/monitors/${res._id || res.id || ''}`);
+      // Route to list
+      history.push(`/monitors`);
     }
   } catch (e) {
+    setSubmitting(false);
     notifications.toasts.addDanger(
       e?.message || e?.body?.message || `Failed to ${edit ? 'update' : 'create'} the monitor`
     );
-  } finally {
-    setSubmitting(false);
   }
 };
-
-// export const submitPPL = async ({
-//   values,
-//   formikBag,
-//   edit,
-//   monitorToEdit,
-//   history,
-//   notifications,
-//   httpClient,
-//   dataSourceId,
-// }) => {
-//   const { setSubmitting } = formikBag;
-//   const api = makeAlertingV2Service(httpClient);
-
-//   const body = {};  // <<<<<<<<<<<<<<<<<<<<<
-
-//   try {
-//     if (edit && monitorToEdit?._id) {
-//       await api.updateMonitor(monitorToEdit._id, body, {
-//         ifSeqNo: monitorToEdit?._seq_no,
-//         ifPrimaryTerm: monitorToEdit?._primary_term,
-//         dataSourceId,
-//       });
-//       notifications.toasts.addSuccess(`Monitor "${values.name}" saved.`);
-//       history.push(`/monitors/${monitorToEdit._id}`);
-//     } else {
-//       const res = await api.createMonitor(body, { dataSourceId });
-//       notifications.toasts.addSuccess(`Monitor "${values.name}" successfully created.`);
-//       history.push(`/monitors/${res._id || res.id || ''}`);
-//     }
-//   } catch (e) {
-//     notifications.toasts.addDanger(e?.message || e?.body?.message || 'Failed to create the monitor');
-//   } finally {
-//     setSubmitting(false);
-//   }
-// };

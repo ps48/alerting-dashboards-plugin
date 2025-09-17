@@ -22,6 +22,20 @@ import {
   DOC_LEVEL_QUERY_MAP,
 } from '../../../components/DocumentLevelMonitorQueries/utils/constants';
 
+// --- helpers to keep PPL builder consistent with helpers.js ---
+const buildLookBackWindowString = (values) => {
+  const frequency = values.frequency;
+  const enabled = values.useLookBackWindow ?? true;
+  if (!enabled) return null;
+  if (frequency !== 'interval' && frequency !== 'cronExpression') return null;
+
+  const amount = Number(values.lookBackAmount ?? 1);
+  const unit = (values.lookBackUnit || 'hours').toLowerCase(); // seconds|minutes|hours|days
+  const suffix = unit === 'seconds' ? 's' : unit === 'minutes' ? 'm' : unit === 'hours' ? 'h' : 'd';
+  const safeAmount = Math.max(1, isFinite(amount) ? amount : 1);
+  return `${safeAmount}${suffix}`;
+};
+
 function mapSeverityToString(input) {
   const s = String(input ?? '').toLowerCase().trim();
   if (['info', 'error', 'low', 'medium', 'high', 'critical'].includes(s)) return s;
@@ -80,10 +94,8 @@ export function formikToMonitor(values) {
     const uiSchedule = formikToUiSchedule(values);
     const schedule = buildSchedule(values.frequency, uiSchedule);
 
-    const lookBack =
-      values.frequency === 'cronExpression'
-        ? (values.look_back_window || null)
-        : null;
+    // NEW: compute look back window for interval or cron
+    const lookBack = buildLookBackWindowString(values);
 
     const triggers = buildPplTriggers(values);
 
@@ -342,46 +354,35 @@ export function formikToGraphQuery(values) {
 }
 
 export function formikToDocLevelInput(values) {
-  let description = FORMIK_INITIAL_VALUES.description;
-  let indices = formikToIndices(values);
-  let queries = _.get(values, 'queries', FORMIK_INITIAL_VALUES.queries);
-  switch (values.searchType) {
-    case SEARCH_TYPE.GRAPH:
-      description = values.description;
-      queries = queries.map((query) => {
-        const formikToQuery = DOC_LEVEL_QUERY_MAP[query.operator].query(query);
-        return {
-          id: query.id,
-          name: query.queryName,
-          query: formikToQuery,
-          tags: query.tags,
-        };
-      });
-      break;
-    case SEARCH_TYPE.QUERY:
-      let query = _.get(values, 'query', '');
-      try {
-        query = JSON.parse(query);
-        description = _.get(query, 'description', description);
-        queries = _.get(query, 'queries', queries);
-      } catch (e) {
-        /* Ignore JSON parsing errors as users may just be configuring the query */
-      }
-      break;
-    default:
-      console.log(
-        `Unsupported searchType found for ${MONITOR_TYPE.DOC_LEVEL}: ${JSON.stringify(
-          values.searchType
-        )}`,
-        values.searchType
-      );
-  }
-
   return {
     [DOC_LEVEL_INPUT_FIELD]: {
-      description: description,
-      indices: indices,
-      queries: queries,
+      description: FORMIK_INITIAL_VALUES.description,
+      indices: formikToIndices(values),
+      queries: (() => {
+        switch (values.searchType) {
+          case SEARCH_TYPE.GRAPH:
+            return _.get(values, 'queries', FORMIK_INITIAL_VALUES.queries).map((query) => {
+              const formikToQuery = DOC_LEVEL_QUERY_MAP[query.operator].query(query);
+              return {
+                id: query.id,
+                name: query.queryName,
+                query: formikToQuery,
+                tags: query.tags,
+              };
+            });
+          case SEARCH_TYPE.QUERY: {
+            let query = _.get(values, 'query', '');
+            try {
+              query = JSON.parse(query);
+              return _.get(query, 'queries', FORMIK_INITIAL_VALUES.queries);
+            } catch (e) {
+              return _.get(values, 'queries', FORMIK_INITIAL_VALUES.queries);
+            }
+          }
+          default:
+            return _.get(values, 'queries', FORMIK_INITIAL_VALUES.queries);
+        }
+      })(),
     },
   };
 }
