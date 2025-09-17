@@ -39,6 +39,35 @@ import { buildClusterMetricsRequest } from '../../../../CreateMonitor/components
 import { getTimeZone } from '../../../utils/helper';
 import { getDataSourceQueryObj } from '../../../../utils/helpers';
 
+/** Normalize PPL preview -> shape that TriggerGraph/TriggerQuery expect */
+const normalizePplPreview = (pplResp, { periodStart, periodEnd } = {}) => {
+  const schema = pplResp?.schema || [];
+  const names = schema.map((c) => c.name);
+  const rows = Array.isArray(pplResp?.datarows) ? pplResp.datarows : [];
+
+  const tsIdx = names.findIndex((n) => /(^@timestamp$|^span$|time|timestamp)/i.test(n));
+  const valIdx = names.findIndex((n) => /(^total$|count$|doc_count$|value$)/i.test(n));
+
+  let buckets = [];
+  if (tsIdx >= 0 && valIdx >= 0 && rows.length) {
+    buckets = rows
+      .map((r) => ({
+        key: typeof r[tsIdx] === 'string' ? Date.parse(r[tsIdx]) : Number(r[tsIdx]),
+        doc_count: Number(r[valIdx]) || 0,
+      }))
+      .filter((b) => Number.isFinite(b.key));
+  } else {
+    const total = Number(pplResp?.total ?? rows.length ?? 0);
+    buckets = [{ key: periodEnd ?? Date.now(), doc_count: total }];
+  }
+
+  const total = Number(pplResp?.total ?? rows.length ?? 0);
+  return {
+    hits: { total: { value: total } },
+    aggregations: { ppl_histogram: { buckets } },
+  };
+};
+
 export const DEFAULT_CLOSED_STATES = {
   WHEN: false,
   OF_FIELD: false,
@@ -68,7 +97,7 @@ export default class CreateTrigger extends Component {
   }
 
   componentDidMount() {
-    this.onRunExecute();
+    this.onRunExecute(monitorToFormik(this.props.monitor));
     this.onQueryMappings();
   }
 
@@ -125,9 +154,9 @@ export default class CreateTrigger extends Component {
       });
   };
 
-  onRunExecute = (triggers = []) => {
+  onRunExecute = (formikValuesArg, triggers = []) => {
     const { httpClient, monitor, notifications } = this.props;
-    const formikValues = monitorToFormik(monitor);
+    const formikValues = formikValuesArg || monitorToFormik(monitor);
     const searchType = formikValues.searchType;
 
     const isPPL =
@@ -139,9 +168,9 @@ export default class CreateTrigger extends Component {
     // PPL PREVIEW: POST /_plugins/_ppl with { query }
     if (isPPL) {
       const pplQuery =
+        formikValues?.pplQuery ||
         monitor?.ppl_monitor?.query ||
         monitor?.query ||
-        formikValues?.pplQuery ||
         '';
 
       const dataSourceQuery = getDataSourceQueryObj();
@@ -153,11 +182,15 @@ export default class CreateTrigger extends Component {
         .then((resp) => {
           if (resp.ok) {
             const now = Date.now();
+            const normalized = normalizePplPreview(resp.resp, {
+              periodStart: now - 60 * 1000,
+              periodEnd: now,
+            });
             const wrapped = {
               ok: true,
               period_start: now - 60 * 1000,
               period_end: now,
-              input_results: { results: [resp.resp] },
+              input_results: { results: [normalized] },
               error: null,
             };
             this.setState({ executeResponse: wrapped });
@@ -302,8 +335,8 @@ export default class CreateTrigger extends Component {
                 context={this.getTriggerContext(executeResponse, monitor, values)}
                 executeResponse={executeResponse}
                 monitor={monitor}
-                monitorValues={monitorToFormik(monitor)}
-                onRun={this.onRunExecute}
+                monitorValues={values}
+                onRun={(fv) => this.onRunExecute(fv || values)}
                 setFlyout={setFlyout}
                 triggers={monitor.triggers}
                 triggerValues={values}

@@ -55,7 +55,37 @@ function buildPplTriggerFromFormik(tDef, idx = 0) {
   const type = (base.type || base.conditionType || 'number_of_results').toLowerCase();
   const mode = (base.mode || 'result_set').toLowerCase();
 
-  const numCond = base.num_results_condition || base.operator || base.thresholdComparator || '>=';
+  const normalizeNumCondition = (raw) => {
+    const v = String(raw ?? '').trim().toLowerCase();
+    switch (v) {
+      case 'above':
+      case 'greater than':
+      case '>':
+        return '>';
+      case 'at least':
+      case 'greater than or equal to':
+      case '>=':
+        return '>=';
+      case 'below':
+      case 'less than':
+      case '<':
+        return '<';
+      case 'at most':
+      case 'less than or equal to':
+      case '<=':
+        return '<=';
+      case 'equal':
+      case 'equals':
+      case '==':
+        return '==';
+      case 'not equal':
+      case '!=':
+        return '!=';
+      default:
+        return '>='; // backend-accepted default
+    }
+  };
+  const numCond = normalizeNumCondition(base.num_results_condition || base.operator || base.thresholdComparator);
   const numVal =
     base.num_results_value ??
     base.value ??

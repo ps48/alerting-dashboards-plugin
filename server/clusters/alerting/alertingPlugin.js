@@ -98,6 +98,11 @@ export default function alertingPlugin(Client, config, components) {
     method: 'POST',
   });
 
+ alerting.alertsForMonitorsV2 = ca({
+   url: { fmt: `/_plugins/_alerting/v2/monitors/alerts` },
+   method: 'GET',
+ });
+
   alerting.executePPLMonitorById = ca({
     url: {
       fmt: `/_plugins/_alerting/v2/monitors/<%=id%>/_execute`,

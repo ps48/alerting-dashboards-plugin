@@ -35,6 +35,37 @@ import DefineCompositeLevelTrigger from '../DefineCompositeLevelTrigger';
 import EnhancedAccordion from '../../../../components/FeatureAnywhereContextMenu/EnhancedAccordion';
 import { getDataSourceQueryObj } from '../../../../../public/pages/utils/helpers';
 
+/** Normalize PPL preview -> shape that TriggerGraph/TriggerQuery expect */
+const normalizePplPreview = (pplResp, { periodStart, periodEnd } = {}) => {
+  const schema = pplResp?.schema || [];
+  const names = schema.map((c) => c.name);
+  const rows = Array.isArray(pplResp?.datarows) ? pplResp.datarows : [];
+
+  // Try to find timestamp and value columns
+  const tsIdx = names.findIndex((n) => /(^@timestamp$|^span$|time|timestamp)/i.test(n));
+  const valIdx = names.findIndex((n) => /(^total$|count$|doc_count$|value$)/i.test(n));
+
+  let buckets = [];
+  if (tsIdx >= 0 && valIdx >= 0 && rows.length) {
+    buckets = rows
+      .map((r) => ({
+        key: typeof r[tsIdx] === 'string' ? Date.parse(r[tsIdx]) : Number(r[tsIdx]),
+        doc_count: Number(r[valIdx]) || 0,
+      }))
+      .filter((b) => Number.isFinite(b.key));
+  } else {
+    // Fallback: single bar from top-level total (or row count)
+    const total = Number(pplResp?.total ?? rows.length ?? 0);
+    buckets = [{ key: periodEnd ?? Date.now(), doc_count: total }];
+  }
+
+  const total = Number(pplResp?.total ?? rows.length ?? 0);
+  return {
+    hits: { total: { value: total } },
+    aggregations: { ppl_histogram: { buckets } },
+  };
+};
+
 class ConfigureTriggers extends React.Component {
   constructor(props) {
     super(props);
@@ -124,7 +155,8 @@ class ConfigureTriggers extends React.Component {
         break;
       case MONITOR_TYPE.CLUSTER_METRICS:
         const numOfTriggers = _.get(this.props.triggerValues, 'triggerDefinitions', []).length;
-        if (numOfTriggers > 0 && canExecuteClusterMetricsMonitor(uri)) this.onRunExecute();
+        if (numOfTriggers > 0 && canExecuteClusterMetricsMonitor(uri))
+          this.onRunExecute(this.props.monitorValues);
         break;
       default:
         break;
@@ -157,9 +189,9 @@ class ConfigureTriggers extends React.Component {
     );
   };
 
-  onRunExecute = (triggers = []) => {
+  onRunExecute = (formikValuesArg, triggers = []) => {
     const { httpClient, monitor, notifications } = this.props;
-    const formikValues = monitorToFormik(monitor);
+    const formikValues = formikValuesArg || monitorToFormik(monitor);
     const searchType = formikValues.searchType;
 
     const isPPL =
@@ -171,9 +203,9 @@ class ConfigureTriggers extends React.Component {
     // PPL PREVIEW (NO alerting execute)
     if (isPPL) {
       const pplQuery =
+        formikValues?.pplQuery ||
         monitor?.ppl_monitor?.query ||
         monitor?.query ||
-        formikValues?.pplQuery ||
         '';
 
       const dataSourceQuery = getDataSourceQueryObj();
@@ -185,11 +217,15 @@ class ConfigureTriggers extends React.Component {
         .then((resp) => {
           if (resp.ok) {
             const now = Date.now();
+            const normalized = normalizePplPreview(resp.resp, {
+              periodStart: now - 60 * 1000,
+              periodEnd: now,
+            });
             const wrapped = {
               ok: true,
               period_start: now - 60 * 1000,
               period_end: now,
-              input_results: { results: [resp.resp] },
+              input_results: { results: [normalized] },
               error: null,
             };
             this.setState({ executeResponse: wrapped });
@@ -297,7 +333,7 @@ class ConfigureTriggers extends React.Component {
         executeResponse={executeResponse}
         monitor={monitor}
         monitorValues={monitorValues}
-        onRun={this.onRunExecute}
+        onRun={(fv) => this.onRunExecute(fv || monitorValues)}
         setFlyout={setFlyout}
         triggers={triggers}
         triggerValues={triggerValues}
@@ -441,7 +477,6 @@ class ConfigureTriggers extends React.Component {
 
     return hasTriggers
       ? triggerValues.triggerDefinitions.map((trigger, index) => {
-          // Use a stable key to avoid React key warnings even when id is missing.
           const stableKey = trigger?.id || trigger?.name || `trigger-${index}`;
           const containerId = `configure-trigger__${stableKey}`;
           const sevLabel = trigger?.severity != null ? String(trigger.severity).toUpperCase() : '';

@@ -42,6 +42,35 @@ import { DEFAULT_TRIGGER_NAME } from '../../utils/constants';
 import { getTriggerContext } from '../../utils/helper';
 import { getDataSourceQueryObj } from '../../../utils/helpers';
 
+/** Normalize PPL preview -> shape that TriggerGraph/TriggerQuery expect */
+const normalizePplPreview = (pplResp, { periodStart, periodEnd } = {}) => {
+  const schema = pplResp?.schema || [];
+  const names = schema.map((c) => c.name);
+  const rows = Array.isArray(pplResp?.datarows) ? pplResp.datarows : [];
+
+  const tsIdx = names.findIndex((n) => /(^@timestamp$|^span$|time|timestamp)/i.test(n));
+  const valIdx = names.findIndex((n) => /(^total$|count$|doc_count$|value$)/i.test(n));
+
+  let buckets = [];
+  if (tsIdx >= 0 && valIdx >= 0 && rows.length) {
+    buckets = rows
+      .map((r) => ({
+        key: typeof r[tsIdx] === 'string' ? Date.parse(r[tsIdx]) : Number(r[tsIdx]),
+        doc_count: Number(r[valIdx]) || 0,
+      }))
+      .filter((b) => Number.isFinite(b.key));
+  } else {
+    const total = Number(pplResp?.total ?? rows.length ?? 0);
+    buckets = [{ key: periodEnd ?? Date.now(), doc_count: total }];
+  }
+
+  const total = Number(pplResp?.total ?? rows.length ?? 0);
+  return {
+    hits: { total: { value: total } },
+    aggregations: { ppl_histogram: { buckets } },
+  };
+};
+
 const defaultRowProps = {
   label: 'Trigger name',
   style: { paddingLeft: '10px' },
@@ -120,16 +149,17 @@ class DefineTrigger extends Component {
     } = this.props;
     switch (searchType) {
       case SEARCH_TYPE.CLUSTER_METRICS:
-        if (canExecuteClusterMetricsMonitor(uri)) this.onRunExecute();
+        if (canExecuteClusterMetricsMonitor(uri)) this.onRunExecute(this.props.monitorValues);
         break;
       default:
-        this.onRunExecute();
+        this.onRunExecute(this.props.monitorValues);
     }
   }
 
-  onRunExecute = (triggers = []) => {
+  onRunExecute = (formikValuesArg, triggers = []) => {
     const { httpClient, monitor, notifications } = this.props;
-    const formikValues = monitorToFormik(monitor);
+    const formikValues =
+      formikValuesArg || this.props.monitorValues || monitorToFormik(monitor);
     const searchType = formikValues.searchType;
 
     const isPPL =
@@ -141,9 +171,9 @@ class DefineTrigger extends Component {
     // --- PPL PREVIEW (NO alerting execute): POST /_plugins/_ppl { query }
     if (isPPL) {
       const pplQuery =
+        formikValues?.pplQuery ||
         monitor?.ppl_monitor?.query ||
         monitor?.query ||
-        formikValues?.pplQuery ||
         ''; // empty still returns a 400 from PPL
 
       const dataSourceQuery = getDataSourceQueryObj();
@@ -154,13 +184,17 @@ class DefineTrigger extends Component {
         })
         .then((resp) => {
           if (resp.ok) {
-            // Normalize to the shape other UI parts expect
             const now = Date.now();
+            const normalized = normalizePplPreview(resp.resp, {
+              periodStart: now - 60 * 1000,
+              periodEnd: now,
+            });
+            // Normalize to the shape other UI parts expect
             const wrapped = {
               ok: true,
               period_start: now - 60 * 1000,
               period_end: now,
-              input_results: { results: [resp.resp] },
+              input_results: { results: [normalized] },
               error: null,
             };
             this.setState({ executeResponse: wrapped });
@@ -277,7 +311,7 @@ class DefineTrigger extends Component {
     const context = getTriggerContext(ctxExec, monitor, triggerValues, triggerIndex);
 
     const fieldPath = triggerIndex !== undefined ? `triggerDefinitions[${triggerIndex}].` : '';
-    const isGraph = _.get(monitorValues, 'searchType') === SEARCH_TYPE.GRAPH;
+    const isGraphLegacy = _.get(monitorValues, 'searchType') === SEARCH_TYPE.GRAPH;
     const isAd = _.get(monitorValues, 'searchType') === SEARCH_TYPE.AD;
 
     const detectorId = _.get(monitorValues, 'detectorId');
@@ -301,6 +335,26 @@ class DefineTrigger extends Component {
         currentSubmitCount: submitCount,
       });
     }
+
+    // figure out current type
+    const selectedType =
+      _.get(triggerValues, `${fieldPath}uiConditionType`) ||
+      _.get(triggerValues, `${fieldPath}type`) ||
+      _.get(triggerValues, `${fieldPath}conditionType`) ||
+      _.get(triggerValues, `${fieldPath}condition?.type`) ||
+      'number_of_results';
+
+    const isPpl =
+      monitor?.query_language === 'ppl' || monitorValues?.monitor_mode === 'ppl';
+
+    // Show graph if:
+    //  - native Graph monitor, OR
+    //  - PPL + "number_of_results" type, OR
+    //  - the normalized PPL buckets are present on the response
+    const hasPplBuckets =
+      _.get(response, 'aggregations.ppl_histogram.buckets.length', 0) > 0 ||
+      _.get(response, 'aggregations.count_over_time.buckets.length', 0) > 0;
+    const isGraph = isGraphLegacy || (isPpl && selectedType === 'number_of_results') || hasPplBuckets;
 
     // Name
     const nameField = (
@@ -327,7 +381,7 @@ class DefineTrigger extends Component {
       />
     );
 
-    // Type (driven by uiConditionType; also mirrored to legacy keys)
+    // Type
     const typeField = (
       <div style={{ paddingLeft: '10px' }}>
         <EuiText size="xs">
@@ -348,7 +402,6 @@ class DefineTrigger extends Component {
                 onChange={(e) => {
                   const v = e.target.value;
                   form.setFieldValue(`${fieldPath}uiConditionType`, v);
-                  // mirror to other keys some code paths might read
                   form.setFieldValue(`${fieldPath}type`, v);
                   form.setFieldValue(`${fieldPath}conditionType`, v);
                   form.setFieldValue(`${fieldPath}condition`, {
@@ -364,13 +417,6 @@ class DefineTrigger extends Component {
       </div>
     );
 
-    const selectedType =
-      _.get(triggerValues, `${fieldPath}uiConditionType`) ||
-      _.get(triggerValues, `${fieldPath}type`) ||
-      _.get(triggerValues, `${fieldPath}conditionType`) ||
-      _.get(triggerValues, `${fieldPath}condition?.type`) ||
-      'number_of_results';
-
     // Build the section that lives where the Trigger condition row is.
     let triggerConditionSection;
     if (isAd && adTriggerType === TRIGGER_TYPE.AD) {
@@ -384,10 +430,10 @@ class DefineTrigger extends Component {
         />
       );
     } else if (isGraph) {
-      // GRAPH monitors: when Type = Custom, show the custom textbox and the graph,
-      // but hide the graph's own "Trigger condition" controls to avoid duplication.
+      // GRAPH or PPL(Number of results): show graph; if Custom, show textbox+graph
       const showCustom = selectedType === 'custom';
       const graphEl = (
+        // NOTE: TriggerGraph should be able to read buckets from aggregations.ppl_histogram.buckets
         <TriggerGraph
           monitorValues={monitorValues}
           response={response}
@@ -396,6 +442,7 @@ class DefineTrigger extends Component {
           fieldPath={fieldPath}
           flyoutMode={flyoutMode}
           hideThresholdControls={showCustom}
+          showModeSelector={selectedType === 'number_of_results'}
         />
       );
 
@@ -403,7 +450,9 @@ class DefineTrigger extends Component {
         <>
           {this.renderCustomCondition({
             fieldPath,
-            onUpdate: _.isEmpty(fieldPath) ? onRun : this.onRunExecute,
+            onUpdate: _.isEmpty(fieldPath)
+              ? () => onRun(this.props.monitorValues)
+              : () => this.onRunExecute(this.props.monitorValues),
           })}
           <EuiSpacer size="m" />
           {graphEl}
@@ -412,19 +461,25 @@ class DefineTrigger extends Component {
         graphEl
       );
     } else {
-      // QUERY-level monitors: swap UI based on Type
+      // QUERY-level monitors (non-graph): swap UI based on Type
       triggerConditionSection =
         selectedType === 'custom' ? (
           this.renderCustomCondition({
             fieldPath,
-            onUpdate: _.isEmpty(fieldPath) ? onRun : this.onRunExecute,
+            onUpdate: _.isEmpty(fieldPath)
+              ? () => onRun(this.props.monitorValues)
+              : () => this.onRunExecute(this.props.monitorValues),
           })
         ) : (
           <TriggerQuery
             context={context}
             error={error}
             executeResponse={ctxExec}
-            onRun={_.isEmpty(fieldPath) ? onRun : this.onRunExecute}
+            onRun={
+              _.isEmpty(fieldPath)
+                ? () => onRun(this.props.monitorValues)
+                : () => this.onRunExecute(this.props.monitorValues)
+            }
             response={response}
             setFlyout={setFlyout}
             triggerValues={triggerValues}

@@ -130,10 +130,116 @@ export default class MonitorService extends MDSEnabledClientService {
 
   alertsPPLMonitor = async (context, req, res) => {
     try {
-      const params = { body: req.body };
       const client = this.getClientBasedOnDataSource(context, req);
-      const resp = await client('alerting.alertsPPLMonitor', params);
-      return res.ok({ body: { ok: true, resp } });
+     // Extract UI params
+     const {
+       from = 0,
+       size = 50,
+       sortField = 'start_time',
+       sortDirection = 'desc',
+       search = '',
+       severityLevel = 'ALL',
+       alertState = 'ALL',
+       monitorIds,
+     } = req.query || {};
+
+     // Normalize monitorIds -> array
+     const ids = Array.isArray(monitorIds)
+       ? monitorIds
+       : typeof monitorIds === 'string' && monitorIds.length
+       ? monitorIds.split(',').map((s) => s.trim()).filter(Boolean)
+       : [];
+
+     // If the cluster has the new per-monitor endpoint, call it per id and merge.
+     if (ids.length) {
+       const all = [];
+       for (const id of ids) {
+         try {
+           // The new API you added: GET /_plugins/_alerting/v2/monitors/alerts?monitor_id=...
+           const qs = new URLSearchParams({ monitor_id: id }).toString();
+           const path = `/_plugins/_alerting/v2/monitors/alerts?${qs}`;
+           const r = await client('transport.request', {
+             method: 'GET',
+             path,
+             headers: DEFAULT_HEADERS,
+           });
+           const alerts = r?.alerts || r?.body?.alerts || [];
+           for (const a of alerts) {
+             // annotate so UI columns have monitor id/name if needed
+             a.monitor_id = a.monitor_id || id;
+             all.push(a);
+           }
+         } catch (e) {
+           // If this endpoint is missing for some reason, continue; we’ll fall back later.
+           if (!isNoHandlerError(e)) throw e;
+         }
+       }
+
+       if (all.length) {
+         // Filter by state / severity / search (very light client-side filter)
+         const filtered = all.filter((a) => {
+           const stateOk = alertState === 'ALL' ? true : String(a.state).toUpperCase() === String(alertState).toUpperCase();
+           const sevOk = severityLevel === 'ALL' ? true : String(a.severity).toUpperCase() === String(severityLevel).toUpperCase();
+           const text = `${a.trigger_name ?? ''} ${a.monitor_name ?? ''} ${a.message ?? ''}`.toLowerCase();
+           const searchOk = !search || text.includes(String(search).toLowerCase());
+           return stateOk && sevOk && searchOk;
+         });
+
+         // Sort & paginate
+         const dir = String(sortDirection).toLowerCase() === 'asc' ? 1 : -1;
+         const key = sortField || 'start_time';
+         filtered.sort((x, y) => (x[key] === y[key] ? 0 : (x[key] > y[key] ? dir : -dir)));
+         const totalAlerts = filtered.length;
+         const page = filtered.slice(Number(from) || 0, (Number(from) || 0) + (Number(size) || 50));
+
+         return res.ok({ body: { ok: true, alerts: page, totalAlerts } });
+       }
+     }
+
+     // Fallback 1: old v2 endpoint (if it exists)
+     try {
+       const qs = new URLSearchParams(
+         Object.entries(req.query || {}).reduce((acc, [k, v]) => {
+           if (v !== undefined && v !== null && v !== '') acc[k] = String(v);
+           return acc;
+         }, {})
+       ).toString();
+       const path = `/_plugins/_alerting/v2/alerts${qs ? `?${qs}` : ''}`;
+       const resp = await client('transport.request', {
+         method: 'GET',
+         path,
+         headers: DEFAULT_HEADERS,
+       });
+       return res.ok({ body: { ok: true, resp } });
+     } catch (e2) {
+       if (!isNoHandlerError(e2)) throw e2;
+     }
+
+     // Fallback 2: query alerts index directly
+     const must = [];
+     if (ids.length) must.push({ terms: { monitor_id: ids } });
+     if (String(alertState).toUpperCase() !== 'ALL') must.push({ term: { state: String(alertState).toUpperCase() } });
+     if (String(severityLevel).toUpperCase() !== 'ALL') must.push({ term: { severity: String(severityLevel).toUpperCase() } });
+     if (search) {
+       must.push({
+         query_string: {
+           query: `*${String(search).split(' ').join('* *')}*`,
+           default_operator: 'AND',
+           fields: ['trigger_name^2', 'monitor_name', 'message', 'error_message'],
+         },
+       });
+     }
+     const body = {
+       from: Number(from) || 0,
+       size: Number(size) || 50,
+       sort: [{ [sortField || 'start_time']: { order: sortDirection || 'desc' } }],
+       query: { bool: { must: must.length ? must : [{ match_all: {} }] } },
+     };
+     const es = await client('alerting.esSearch', { index: INDEX.ALL_ALERTS, body });
+     const hits = es?.hits?.hits || [];
+     const alerts = hits.map((h) => ({ id: h._id, version: h._version, ...(h._source || {}) }));
+     const totalAlerts = es?.hits?.total?.value || alerts.length;
+     return res.ok({ body: { ok: true, alerts, totalAlerts } });
     } catch (err) {
       console.error('Alerting - MonitorService - alertsPPLMonitor:', err);
       return res.ok({ body: { ok: false, resp: err.message } });

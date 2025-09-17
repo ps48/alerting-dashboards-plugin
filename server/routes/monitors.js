@@ -19,6 +19,19 @@ export default function (services, router, dataSourceEnabled) {
     monitorIds: schema.maybe(schema.any()),
   };
 
+  const alertsFieldValidations = {
+    from: schema.number(),
+    size: schema.number(),
+    search: schema.string(),
+    sortField: schema.string(),
+    sortDirection: schema.string(),
+    severityLevel: schema.string(),
+    alertState: schema.string(),
+    // Optional filters commonly sent by the UI
+    monitorIds: schema.maybe(schema.any()),
+    monitorType: schema.maybe(schema.string()),
+  };
+
   router.get(
     {
       path: '/api/alerting/monitors',
@@ -135,7 +148,7 @@ export default function (services, router, dataSourceEnabled) {
   router.get(
     {
       path: '/api/alerting/v2/alerts',
-      validate: { query: createValidateQuerySchema(dataSourceEnabled) },
+      validate: { query: createValidateQuerySchema(dataSourceEnabled, alertsFieldValidations) },
     },
     monitorService.alertsPPLMonitor
   );

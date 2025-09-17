@@ -47,6 +47,11 @@ export const getInitialValues = ({
     initialValues.searchType = 'query'; // keep legacy UIs happy
   }
 
+  if (initialValues?.pplQuery && !initialValues.monitor_mode) {
+    initialValues.monitor_mode = 'ppl';
+    if (!initialValues.searchType) initialValues.searchType = 'query';
+  }
+
   if (flyoutMode) {
     initialValues.name = `${title} ${getDigitId()}`;
     initialValues.index = index;
@@ -76,7 +81,21 @@ export const getInitialValues = ({
       ...monitorToFormik(monitorToEdit),
       triggerDefinitions: triggers.triggerDefinitions,
     };
-    if (!('monitor_mode' in initialValues)) initialValues.monitor_mode = 'legacy';
+    const isPpl =
+      initialValues?.query_language === 'ppl' ||
+      monitorToEdit?.query_language === 'ppl' ||
+      !!monitorToEdit?.ppl_monitor;
+    if (!('monitor_mode' in initialValues)) {
+      initialValues.monitor_mode = isPpl ? 'ppl' : 'legacy';
+    }
+    if (isPpl) {
+      initialValues.searchType = 'query';
+      initialValues.pplQuery =
+        initialValues.pplQuery ||
+        monitorToEdit?.ppl_monitor?.query ||
+        monitorToEdit?.query ||
+        '';
+    }
   }
 
   return initialValues;
@@ -312,10 +331,34 @@ export const makeAlertingV2Service = (httpClient) => {
       if (!r.ok) throw r.resp || r;
       return r.resp;
     },
+
+    /** V2: Get alerts (replaces legacy monitors/alerts) */
+    getAlerts: async ({ monitorId, size = 200, from = 0 } = {}) => {
+      const query = withDataSource();
+      if (monitorId) query.monitorId = monitorId;
+      query.size = size;
+      query.from = from;
+      const r = await httpClient.get(`${base}/alerts`, { query });
+      if (!r.ok) throw r.resp || r;
+      return r.resp;
+    },
   };
 };
 
-/** Map Formik values -> V2 schedule (Interval or Cron) */
+// Normalize timezone coming from formik (can be array/object/string)
+const getTimezoneString = (values) => {
+  const tz = values?.timezone;
+  // EUI often stores single-selects as arrays of {label, value}
+  if (Array.isArray(tz) && tz.length) {
+    return tz[0]?.label || tz[0]?.value || 'UTC';
+  }
+  if (tz && typeof tz === 'object') {
+    return tz.label || tz.value || 'UTC';
+  }
+  if (typeof tz === 'string' && tz.trim()) return tz;
+  return 'UTC';
+};
+
 export const pplToV2Schedule = (values) => {
   if (values.frequency === 'interval') {
     return {
@@ -329,7 +372,7 @@ export const pplToV2Schedule = (values) => {
     return {
       cron: {
         expression: values.cronExpression,
-        timezone: values.timezone || 'UTC',
+        timezone: getTimezoneString(values),
       },
     };
   }
@@ -344,6 +387,37 @@ export const pplToV2Schedule = (values) => {
 
 /** Convert a triggerDefinition from Formik -> ppl trigger payload */
 const formikPplTriggerToWire = (t, i = 0) => {
+  // Map any legacy enums or friendly labels to backend-supported symbols
+  const normalizeNumCondition = (raw) => {
+    const v = String(raw ?? '').trim().toLowerCase();
+    switch (v) {
+      case 'above':
+      case 'greater than':
+      case '>':
+        return '>';
+      case 'at least':
+      case 'greater than or equal to':
+      case '>=':
+        return '>=';
+      case 'below':
+      case 'less than':
+      case '<':
+        return '<';
+      case 'at most':
+      case 'less than or equal to':
+      case '<=':
+        return '<=';
+      case 'equal':
+      case 'equals':
+      case '==':
+        return '==';
+      case 'not equal':
+      case '!=':
+        return '!=';
+      default:
+        return '>='; // safe default
+    }
+  };
   const normalizeSeverity = (s) => {
     const v = String(s ?? '').toLowerCase();
     if (['info', 'low', 'medium', 'high', 'critical', 'error'].includes(v)) return v;
@@ -388,7 +462,7 @@ const formikPplTriggerToWire = (t, i = 0) => {
     actions: Array.isArray(t?.actions) ? t.actions : [],
     mode: (t?.mode || 'result_set').toLowerCase(), // 'result_set' | 'per_result'
     type, // 'number_of_results' | 'custom'
-    num_results_condition: isNum ? (t?.num_results_condition || t?.thresholdEnum || '>=') : null,
+    num_results_condition: isNum ? normalizeNumCondition(t?.num_results_condition || t?.thresholdEnum) : null,
     num_results_value: isNum ? Number(t?.num_results_value ?? t?.thresholdValue ?? 1) : null,
     custom_condition: !isNum ? (t?.custom_condition || t?.customCondition || null) : null,
     suppress,
@@ -422,10 +496,7 @@ export const buildPPLMonitorFromFormik = (values) => {
       ];
 
   // Per API doc, look_back_window applies to CRON schedules. Include only when cron was chosen.
-  const lookBack =
-    values.frequency === 'cronExpression'
-      ? values.lookBackWindow || values.look_back_window || null
-      : null;
+  const lookBack = buildLookBackFromFormik(values);
 
   return {
     ppl_monitor: {
@@ -440,6 +511,24 @@ export const buildPPLMonitorFromFormik = (values) => {
     },
   };
 };
+
+/** Build compact look back window string from Formik values, e.g. "15m" */
+const buildLookBackFromFormik = (values) => {
+  const enabled = values?.useLookBackWindow ?? true;
+  if (!enabled) return null;
+  const n = Number(values?.lookBackAmount ?? 1);
+  const amt = Number.isFinite(n) && n > 0 ? Math.floor(n) : 1;
+  const unit = String(values?.lookBackUnit || 'hours').toLowerCase();
+  const suffix = unit.startsWith('second')
+    ? 's'
+    : unit.startsWith('minute')
+    ? 'm'
+    : unit.startsWith('hour')
+    ? 'h'
+    : 'd';
+  return `${amt}${suffix}`;
+};
+
 
 /**
  * Preview PPL by calling the PPL endpoint directly:
