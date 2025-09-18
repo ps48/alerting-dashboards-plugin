@@ -13,7 +13,6 @@ import {
   EuiFlexItem,
   EuiSpacer,
   EuiText,
-  EuiButtonGroup,
   EuiPanel,
   EuiFormRow,
   EuiTitle,
@@ -35,7 +34,8 @@ import {
   EuiContextMenuItem,
   EuiIconTip,
   EuiBadge,
-  EuiCheckbox,              // NEW
+  EuiCheckbox,
+  EuiToolTip,
 } from '@elastic/eui';
 
 import DefineMonitor from '../DefineMonitor';
@@ -76,13 +76,20 @@ export default class CreateMonitor extends Component {
     super(props);
 
     const { location, edit, monitorToEdit } = props;
+    const baseInitial = getInitialValues({ location, monitorToEdit, edit });
     const initialValues = {
-      monitor_mode: 'legacy',
-      // NEW: sensible defaults for look back UI in PPL flow
-      useLookBackWindow: true,
-      lookBackAmount: 1,
-      lookBackUnit: 'hours', // seconds | minutes | hours | days
-      ...getInitialValues({ location, monitorToEdit, edit }),
+      ...baseInitial,
+      monitor_mode: edit
+        ? (baseInitial.monitor_mode ||
+          (monitorToEdit?.ppl_monitor ||
+            monitorToEdit?.query_language === 'ppl'
+              ? 'ppl'
+              : 'legacy'))
+        : 'ppl', // <-- default for create flow
+      // keep the PPL look-back defaults unless helper already provided them
+      useLookBackWindow: baseInitial.useLookBackWindow ?? true,
+      lookBackAmount: baseInitial.lookBackAmount ?? 1,
+      lookBackUnit: baseInitial.lookBackUnit || 'hours', // seconds | minutes | hours | days
     };
 
     let triggerToEdit;
@@ -102,6 +109,7 @@ export default class CreateMonitor extends Component {
       previewError: null,
       previewResult: null,
       queryLibOpen: false,
+      previewOpen: false,
     };
   }
 
@@ -145,7 +153,6 @@ export default class CreateMonitor extends Component {
     const { initialValues } = this.state;
 
     if (edit) {
-      //const schedule = _.get(monitorToEdit, 'schedule', FORMIK_INITIAL_VALUES.period);
       const schedule =
         _.get(monitorToEdit, 'ppl_monitor.schedule') ||
         _.get(monitorToEdit, 'schedule') ||
@@ -156,12 +163,11 @@ export default class CreateMonitor extends Component {
           _.set(initialValues, 'frequency', 'cronExpression');
           break;
         default:
-          //_.set(initialValues, 'period', schedule.period);
           _.set(initialValues, 'period', schedule.period || FORMIK_INITIAL_VALUES.period);
           break;
       }
 
-      // If monitor already has a look_back_window, pre-fill our UI
+      // hydrate look_back_window if present
       const lbw =
         monitorToEdit?.look_back_window ||
         monitorToEdit?.ppl_monitor?.look_back_window ||
@@ -254,7 +260,6 @@ export default class CreateMonitor extends Component {
   };
 
   buildMonitorForTriggers = (values) => {
-    // For PPL mode, hand ConfigureTriggers a legacy-shaped stub it understands.
     if (values.monitor_mode === 'ppl') {
       return {
         name: values.name || '',
@@ -264,16 +269,13 @@ export default class CreateMonitor extends Component {
         schedule: { period: { interval: 1, unit: 'MINUTES' } },
         inputs: [{ search: { indices: [], query: { match_all: {} } } }],
         ui_metadata: {
-          // Treat trigger UI as "query" so legacy assumptions in DefineTrigger don't explode.
           search: { searchType: 'query' },
           triggers: {},
         },
-        // keep legacy trigger slot empty; the UI binds to values.triggerDefinitions
         triggers: [],
       };
     }
 
-    // Legacy path stays the same as before
     const monitor = formikToMonitor(values) || {};
     if (!Array.isArray(monitor.inputs) || monitor.inputs.length === 0) {
       monitor.inputs = [{ search: { indices: [], query: { match_all: {} } } }];
@@ -296,6 +298,7 @@ export default class CreateMonitor extends Component {
           placeholder="Enter a monitor name"
         />
       </EuiFormRow>
+
       <EuiFormRow
         label={
           <>
@@ -313,6 +316,23 @@ export default class CreateMonitor extends Component {
           placeholder="Describe the monitor"
         />
       </EuiFormRow>
+
+      <EuiFormRow>
+        <EuiCheckbox
+          id="useLegacyMonitorsPplInline"
+          label={
+            <span>
+              Use legacy monitors{' '}
+              <EuiToolTip content="Use pre-existing monitor types available in legacy alerts.">
+                <EuiIconTip type="iInCircle" />
+              </EuiToolTip>
+            </span>
+          }
+          checked={values.monitor_mode === 'legacy'}
+          onChange={(e) => setFieldValue('monitor_mode', e.target.checked ? 'legacy' : 'ppl')}
+          data-test-subj="useLegacyCheckboxPplInline"
+        />
+      </EuiFormRow>
     </>
   );
 
@@ -322,11 +342,7 @@ export default class CreateMonitor extends Component {
         <EuiFlexItem grow={false}>
           <EuiFlexGroup alignItems="center" gutterSize="s" responsive={false}>
             <EuiFlexItem grow={false}>
-              <EuiBadge
-                color="hollow"
-                data-test-subj="pplBadge"
-                style={{ borderRadius: 8, padding: '2px 10px', fontWeight: 700 }}
-              >
+              <EuiBadge color="hollow" data-test-subj="pplBadge" style={{ borderRadius: 8, padding: '2px 10px', fontWeight: 700 }}>
                 PPL
               </EuiBadge>
             </EuiFlexItem>
@@ -370,17 +386,23 @@ export default class CreateMonitor extends Component {
                 size="s"
                 onClick={async () => {
                   const { httpClient, landingDataSourceId } = this.props;
-                  this.setState({ previewLoading: true, previewError: null, previewResult: null });
+                  this.setState({
+                    previewLoading: true,
+                    previewError: null,
+                    previewResult: null,
+                    previewOpen: true,       
+                  });
                   try {
                     const data = await runPPLPreview(httpClient, {
                       queryText: values.pplQuery || '',
                       dataSourceId: values.dataSourceId || landingDataSourceId,
                     });
-                    this.setState({ previewResult: data, previewLoading: false });
+                    this.setState({ previewResult: data, previewLoading: false, previewOpen: true });
                   } catch (e) {
                     this.setState({
                       previewError: e?.body?.message || e?.message || 'Preview failed',
                       previewLoading: false,
+                      previewOpen: true,
                     });
                   }
                 }}
@@ -418,7 +440,14 @@ export default class CreateMonitor extends Component {
 
       <EuiSpacer size="m" />
 
-      <EuiAccordion id="pplPreviewAccordion" buttonContent="Preview results" paddingSize="m" data-test-subj="pplPreviewAccordion">
+      <EuiAccordion
+          id="pplPreviewAccordion"
+          buttonContent="Preview results"
+          paddingSize="m"
+          data-test-subj="pplPreviewAccordion"
+          forceState={this.state.previewOpen ? 'open' : 'closed'}
+          onToggle={(isOpen) => this.setState({ previewOpen: isOpen })}
+        >
         <EuiPanel hasBorder paddingSize="l" data-test-subj="pplResultsPanel">
           <EuiTitle size="s"><h2>Results</h2></EuiTitle>
           <EuiHorizontalRule margin="m" />
@@ -436,7 +465,7 @@ export default class CreateMonitor extends Component {
     </>
   );
 
-  // ---- NEW: PPL Schedule UI with look back window for Interval & Cron ----
+  // ---- PPL Schedule (unchanged) ----
   renderPplScheduleBody = (values, setFieldValue) => {
     const useLB = values.useLookBackWindow ?? true;
     const lbAmount = Number(values.lookBackAmount ?? 1);
@@ -497,7 +526,7 @@ export default class CreateMonitor extends Component {
               { value: 'daily', text: 'Daily' },
               { value: 'weekly', text: 'Weekly' },
               { value: 'monthly', text: 'Monthly' },
-              { value: 'cronExpression', text: 'Custom cron job' }, 
+              { value: 'cronExpression', text: 'Custom cron job' },
             ]}
             value={values.frequency}
             onChange={(e) => setFieldValue('frequency', e.target.value)}
@@ -531,14 +560,11 @@ export default class CreateMonitor extends Component {
               </EuiFlexGroup>
             </EuiFormRow>
 
-            {/* NEW: look back window for interval */}
-            {LookBackControls}
           </>
         )}
 
         {values.frequency === 'cronExpression' && (
           <>
-            {/* NEW: Cron text box + helper text */}
             <EuiFormRow label="Run every">
               <EuiTextArea
                 data-test-subj="pplCronExpression"
@@ -553,15 +579,13 @@ export default class CreateMonitor extends Component {
             </EuiText>
 
             <EuiSpacer size="m" />
-
-            {/* NEW: look back window for cron */}
-            {LookBackControls}
           </>
         )}
+        {LookBackControls}
       </>
     );
   };
-  // ---- END NEW ----
+  // ---- END PPL schedule ----
 
   renderStepPanel = ({ id, title, children, initialIsOpen = true }) => (
     <EuiPanel hasBorder paddingSize="none">
@@ -593,6 +617,7 @@ export default class CreateMonitor extends Component {
       notificationService,
     } = this.props;
     const { createModalOpen, initialValues, plugins } = this.state;
+
     return (
       <div style={{ padding: '16px' }}>
         <Formik
@@ -606,29 +631,51 @@ export default class CreateMonitor extends Component {
             const isComposite = values.monitor_type === MONITOR_TYPE.COMPOSITE_LEVEL;
             const safeMonitor = this.buildMonitorForTriggers(values);
             const safeTriggers = _.get(safeMonitor, 'triggers', []);
+
+            const LegacyToggleHeader = (
+              <EuiCheckbox
+                id="useLegacyMonitorsHeader"
+                label={
+                  <span>
+                    Use legacy monitors{' '}
+                    <EuiToolTip content="Use pre-existing monitor types available in legacy alerts.">
+                      <EuiIconTip type="iInCircle" data-test-subj="legacyInfoHeader" />
+                    </EuiToolTip>
+                  </span>
+                }
+                checked={values.monitor_mode === 'legacy'}
+                onChange={(e) => setFieldValue('monitor_mode', e.target.checked ? 'legacy' : 'ppl')}
+                data-test-subj="useLegacyCheckboxHeader"
+              />
+            );
+
+            const LegacyToggleInline = (
+              // Shown only in Legacy flow (bottom of Monitor Details card area)
+              <EuiFormRow fullWidth>
+                <EuiCheckbox
+                  id="useLegacyMonitorsInline"
+                  label={
+                    <span>
+                      Use legacy monitors{' '}
+                      <EuiToolTip content="Use pre-existing monitor types available in legacy alerts.">
+                        <EuiIconTip type="iInCircle" data-test-subj="legacyInfoInline" />
+                      </EuiToolTip>
+                    </span>
+                  }
+                  checked={values.monitor_mode === 'legacy'}
+                  onChange={(e) => setFieldValue('monitor_mode', e.target.checked ? 'legacy' : 'ppl')}
+                  data-test-subj="useLegacyCheckboxInline"
+                />
+              </EuiFormRow>
+            );
+
             return (
               <Fragment>
-                <PageHeader>
-                  <EuiText size="s">
-                    <h1>{edit ? 'Edit' : 'Create'} monitor</h1>
-                  </EuiText>
-                  <EuiSpacer />
-                  <EuiFlexGroup justifyContent="flexEnd">
-                    <EuiFlexItem grow={false}>
-                      <EuiButtonGroup
-                        legend="Monitor mode"
-                        options={[
-                          { id: 'ppl', label: 'Query based PPL monitor' },
-                          { id: 'legacy', label: 'Legacy monitor' },
-                        ]}
-                        type="single"
-                        idSelected={values.monitor_mode || 'legacy'}
-                        onChange={(id) => setFieldValue('monitor_mode', id)}
-                        buttonSize="s"
-                      />
-                    </EuiFlexItem>
-                  </EuiFlexGroup>
-                </PageHeader>
+              <PageHeader>
+                <EuiText size="s">
+                  <h1>{edit ? 'Edit' : 'Create'} monitor</h1>
+                </EuiText>
+              </PageHeader>
 
                 {values.monitor_mode === 'ppl' ? (
                   <div data-test-subj="pplBranch">
@@ -657,7 +704,7 @@ export default class CreateMonitor extends Component {
                           children: this.renderStepPanel({
                             id: 'pplStep3',
                             title: 'Schedule',
-                            children: this.renderPplScheduleBody(values, setFieldValue), // UPDATED
+                            children: this.renderPplScheduleBody(values, setFieldValue),
                           }),
                         },
                         {
@@ -709,6 +756,7 @@ export default class CreateMonitor extends Component {
                   </div>
                 ) : (
                   <div data-test-subj="legacyBranch">
+                    {/* Monitor Details card */}
                     <MonitorDetails
                       values={values}
                       errors={errors}
@@ -721,14 +769,23 @@ export default class CreateMonitor extends Component {
                       setFlyout={this.props.setFlyout}
                     />
 
+                    {/* Place the legacy toggle RIGHT BELOW the Monitor Details card
+                        (i.e., after schedule's "Run every" UI) */}
+                    <EuiSpacer size="s" />
+                    {LegacyToggleInline}
+                    <EuiSpacer />
+
                     {isComposite && (
                       <>
+                        <WorkflowDetails
+                          isDarkMode={isDarkMode}
+                          values={values}
+                          httpClient={httpClient}
+                          errors={errors}
+                        />
                         <EuiSpacer />
-                        <WorkflowDetails isDarkMode={isDarkMode} values={values} httpClient={httpClient} errors={errors} />
                       </>
                     )}
-
-                    <EuiSpacer />
 
                     {values.searchType !== SEARCH_TYPE.AD &&
                       values.monitor_type !== MONITOR_TYPE.COMPOSITE_LEVEL &&

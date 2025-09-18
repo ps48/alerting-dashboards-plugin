@@ -97,7 +97,10 @@ export default function (services, router, dataSourceEnabled) {
       validate: {
         params: schema.object({ id: schema.string() }),
         body: schema.any(),
-        query: createValidateQuerySchema(dataSourceEnabled),
+       query: createValidateQuerySchema(dataSourceEnabled, {
+         if_seq_no: schema.maybe(schema.number()),
+         if_primary_term: schema.maybe(schema.number()),
+       }),
       },
     },
     monitorService.updatePPLMonitor

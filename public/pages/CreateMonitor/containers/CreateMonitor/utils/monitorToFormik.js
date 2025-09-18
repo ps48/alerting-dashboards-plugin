@@ -14,15 +14,21 @@ import {
 import { conditionToExpressions } from '../../../../CreateTrigger/utils/helper';
 
 // Convert Monitor JSON to Formik values used in UI forms
-export default function monitorToFormik(monitor) {
+export default function monitorToFormik(monitorIn) {
+  // Accept v2 wrappers transparently
+  const monitor =
+    monitorIn?.monitor_v2?.ppl_monitor ||
+    monitorIn?.ppl_monitor ||
+    monitorIn ||
+    {};
   const formikValues = _.cloneDeep(FORMIK_INITIAL_VALUES);
   if (!monitor) return formikValues;
   const {
     name,
     monitor_type,
     enabled,
-    schedule: { cron: { expression: cronExpression = formikValues.cronExpression, timezone } = {} },
-    inputs,
+    schedule: { cron: { expression: cronExpression = formikValues.cronExpression, timezone } = {} } = {},
+    inputs = [],
     ui_metadata: { schedule = {}, search = {} } = {},
     monitorOptions = [],
   } = monitor;
@@ -58,10 +64,12 @@ export default function monitorToFormik(monitor) {
           searchType: preventVisualEditor ? 'query' : 'graph',
         };
       default:
-        return {
-          index: indicesToFormik(inputs[0].search.indices),
-          query: JSON.stringify(inputs[0].search.query, null, 4),
-        };
+      const idx = inputs?.[0]?.search?.indices || [];
+      const q = inputs?.[0]?.search?.query ?? {};
+      return {
+        index: indicesToFormik(idx),
+        query: JSON.stringify(q, null, 4),
+      };
     }
   };
 

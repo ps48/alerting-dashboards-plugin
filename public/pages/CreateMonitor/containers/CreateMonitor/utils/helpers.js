@@ -496,16 +496,17 @@ export const buildPPLMonitorFromFormik = (values) => {
         },
       ];
 
-  // Per API doc, look_back_window applies to CRON schedules. Include only when cron was chosen.
-  const isCron = values.frequency === 'cronExpression';
-  const lookBack = isCron ? buildLookBackFromFormik(values) : null;
+    // Per API: include look_back_window only for CRON schedules
+    const schedule = pplToV2Schedule(values);
+    const isCron = !!schedule.cron;
+    const lookBack = isCron ? buildLookBackFromFormik(values) : null;
 
   return {
     ppl_monitor: {
       name: values.name || 'Untitled monitor',
       enabled: !values.disabled,
-      schedule: pplToV2Schedule(values),
-      ...(isCron && lookBack ? { look_back_window: lookBack } : {}),
+      schedule,
+      ...(lookBack ? { look_back_window: lookBack } : {}),
       triggers,
       schema_version: 0,
       query_language: 'ppl',
@@ -516,7 +517,6 @@ export const buildPPLMonitorFromFormik = (values) => {
 
 /** Build compact look back window string from Formik values, e.g. "15m" */
 const buildLookBackFromFormik = (values) => {
-  if (values.frequency !== 'cronExpression') return null;
   const enabled = values?.useLookBackWindow ?? true;
   if (!enabled) return null;
   const n = Number(values?.lookBackAmount ?? 1);

@@ -6,19 +6,20 @@
 import React, { Component } from 'react';
 import PropTypes from 'prop-types';
 import _ from 'lodash';
-import {
-  EuiAccordion,
-  EuiButton,
-  EuiCallOut,
-  EuiSpacer,
-  EuiText,
+ import {
+  EuiAccordion, 
+  EuiButton, 
+  EuiCallOut, 
+  EuiSpacer, 
+  EuiText, 
   EuiTitle,
-  EuiFlexGroup,
-  EuiFlexItem,
-  EuiSelect,
-  EuiFieldText,
-  EuiCheckbox,
-} from '@elastic/eui';
+  EuiFlexGroup, 
+  EuiFlexItem, 
+  EuiSelect, 
+  EuiFieldText, 
+  EuiCheckbox, 
+  EuiFormRow,
+ } from '@elastic/eui';
 import { Field, FieldArray } from 'formik';
 import 'brace/mode/plain_text';
 
@@ -71,12 +72,31 @@ const normalizePplPreview = (pplResp, { periodStart, periodEnd } = {}) => {
   };
 };
 
+// One source of truth for width & padding so all rows match the name field
+const GRID_MAX = 720;            // tweak to taste; this is the "Trigger name" row width
+const GRID_PAD = 10;             // same left pad you're already using
+const twoColRowStyle = { paddingLeft: GRID_PAD, maxWidth: GRID_MAX };
+const twoColRowProps = { gutterSize: 'm', responsive: false, alignItems: 'flexEnd', style: twoColRowStyle };
+const HALF_COL = { flexBasis: '50%', minWidth: 0 };
+const TIME_GUTTER_PX = 8; // EUI gutterSize="s" ≈ 8px
+const SUPPRESS_TEXT_MAX = 300 * 2 + TIME_GUTTER_PX;
+
+
 const defaultRowProps = {
   label: 'Trigger name',
   style: { paddingLeft: '10px' },
   isInvalid,
   error: hasError,
 };
+
+const THRESHOLD_OPTIONS = [
+  { value: 'GREATER_THAN', text: 'Greater than' },
+  { value: 'GREATER_THAN_EQUAL', text: 'Greater than equal to' },
+  { value: 'LESS_THAN', text: 'Less than' },
+  { value: 'LESS_THAN_EQUAL', text: 'Less than equal to' },
+  { value: 'EQUAL', text: 'Equal' },
+  { value: 'NOT_EQUALS', text: 'Not equal to' },
+];
 
 const defaultInputProps = { isInvalid };
 
@@ -249,39 +269,43 @@ class DefineTrigger extends Component {
 
   // REPLACEMENT UI for Trigger condition when Type = Custom
   renderCustomCondition = ({ fieldPath, onUpdate }) => (
-    <>
-      <EuiText size="xs">
-        <strong>Trigger condition</strong>
-      </EuiText>
-      <EuiText color="subdued" size="xs">
-        Add a custom condition to append to your existing query.
-      </EuiText>
-      <EuiSpacer size="s" />
-      <EuiFlexGroup gutterSize="s" alignItems="center" responsive={false}>
-        <EuiFlexItem>
-          <Field name={`${fieldPath}customCondition`}>
-            {({ field }) => (
-              <EuiFieldText
-                {...field}
-                value={field.value != null ? field.value : ''}
-                fullWidth
-                placeholder="eg: (eval result = count > 3)"
-                data-test-subj="customConditionInput"
-              />
-            )}
-          </Field>
-        </EuiFlexItem>
-        <EuiFlexItem grow={false}>
-          <EuiButton size="s" onClick={onUpdate} data-test-subj="updateResults">
-            Update results
-          </EuiButton>
-        </EuiFlexItem>
-      </EuiFlexGroup>
-      <EuiSpacer size="xs" />
-      <EuiText color="subdued" size="xs">
+    <div style={{ paddingLeft: GRID_PAD, maxWidth: GRID_MAX }}>
+      <EuiFormRow label="Trigger condition" fullWidth>
+        <>
+          {/* helper text directly under the label */}
+          <EuiText size="xs" color="subdued" style={{ marginBottom: 8 }}>
+            Add a custom condition to append to your existing query.
+          </EuiText>
+
+          {/* input + button on one line; bar will match Trigger name width */}
+          <EuiFlexGroup gutterSize="s" alignItems="center" responsive={false}>
+            <EuiFlexItem>
+              <Field name={`${fieldPath}customCondition`}>
+                {({ field }) => (
+                  <EuiFieldText
+                    {...field}
+                    value={field.value != null ? field.value : ''}
+                    fullWidth
+                    placeholder="eg: (eval result = count > 3)"
+                    data-test-subj="customConditionInput"
+                  />
+                )}
+              </Field>
+            </EuiFlexItem>
+            <EuiFlexItem grow={false}>
+              <EuiButton size="s" onClick={onUpdate} data-test-subj="updateResults">
+                Update results
+              </EuiButton>
+            </EuiFlexItem>
+          </EuiFlexGroup>
+        </>
+      </EuiFormRow>
+
+      {/* optional footnote, still aligned */}
+      <EuiText color="subdued" size="xs" style={{ marginTop: 4 }}>
         condition should be limited to supported functions.
       </EuiText>
-    </>
+    </div>
   );
 
   render() {
@@ -343,6 +367,8 @@ class DefineTrigger extends Component {
       _.get(triggerValues, `${fieldPath}conditionType`) ||
       _.get(triggerValues, `${fieldPath}condition?.type`) ||
       'number_of_results';
+    
+    const isNumberOfResults = selectedType === 'number_of_results';
 
     const isPpl =
       monitor?.query_language === 'ppl' || monitorValues?.monitor_mode === 'ppl';
@@ -365,8 +391,8 @@ class DefineTrigger extends Component {
             validateTriggerName(triggerValues?.triggerDefinitions, triggerIndex, flyoutMode)(val),
         }}
         formRow
-        rowProps={{ ...defaultRowProps, ...(flyoutMode ? { style: {} } : {}) }}
-        inputProps={defaultInputProps}
+        rowProps={{ ...defaultRowProps, ...(flyoutMode ? { style: {} } : {}), fullWidth: true, style: { paddingLeft: GRID_PAD, maxWidth: GRID_MAX } }}
+        inputProps={{ ...defaultInputProps, fullWidth: true }}
       />
     );
 
@@ -382,11 +408,9 @@ class DefineTrigger extends Component {
     );
 
     // Type
+    // Make Type fullWidth too
     const typeField = (
-      <div style={{ paddingLeft: '10px' }}>
-        <EuiText size="xs">
-          <h5 style={{ margin: 0 }}>Type</h5>
-        </EuiText>
+      <EuiFormRow label="Type" fullWidth style={{ paddingLeft: 0 }}>
         <Field name={`${fieldPath}uiConditionType`}>
           {({ field, form }) => {
             const derived =
@@ -399,6 +423,7 @@ class DefineTrigger extends Component {
               <EuiSelect
                 options={TYPE_OPTIONS}
                 value={derived}
+                fullWidth
                 onChange={(e) => {
                   const v = e.target.value;
                   form.setFieldValue(`${fieldPath}uiConditionType`, v);
@@ -414,8 +439,40 @@ class DefineTrigger extends Component {
             );
           }}
         </Field>
-      </div>
+      </EuiFormRow>
     );
+
+    const numberOfResultsHeader = isNumberOfResults ? (
+      <>
+        {/* Trigger condition row: left = operator, right = number value */}
+        <EuiFlexGroup {...twoColRowProps}>
+          <EuiFlexItem grow>
+            <FormikSelect
+              name={`${fieldPath}thresholdEnum`}
+              formRow
+              rowProps={{ label: 'Trigger condition', fullWidth: true }}
+              inputProps={{ options: THRESHOLD_OPTIONS, fullWidth: true }}
+            />
+          </EuiFlexItem>
+          <EuiFlexItem grow>
+            <FormikFieldText
+              name={`${fieldPath}thresholdValue`}
+              formRow
+              rowProps={{ hasEmptyLabelSpace: true, fullWidth: true }}
+              inputProps={{ type: 'number', fullWidth: true }}
+            />
+          </EuiFlexItem>
+        </EuiFlexGroup>
+
+        {/* Trigger radios on the left; blank right col to keep grid */}
+        <EuiFlexGroup {...twoColRowProps}>
+          <EuiFlexItem grow>
+            {/* your existing radio group goes here */}
+          </EuiFlexItem>
+          <EuiFlexItem grow />
+        </EuiFlexGroup>
+      </>
+    ) : null;
 
     // Build the section that lives where the Trigger condition row is.
     let triggerConditionSection;
@@ -431,9 +488,10 @@ class DefineTrigger extends Component {
       );
     } else if (isGraph) {
       // GRAPH or PPL(Number of results): show graph; if Custom, show textbox+graph
+      // --- Graph path ---
       const showCustom = selectedType === 'custom';
+
       const graphEl = (
-        // NOTE: TriggerGraph should be able to read buckets from aggregations.ppl_histogram.buckets
         <TriggerGraph
           monitorValues={monitorValues}
           response={response}
@@ -441,25 +499,29 @@ class DefineTrigger extends Component {
           thresholdValue={thresholdValue}
           fieldPath={fieldPath}
           flyoutMode={flyoutMode}
-          hideThresholdControls={showCustom}
-          showModeSelector={selectedType === 'number_of_results'}
+          hideThresholdControls={true}                 // we render threshold fields ourselves
+          showModeSelector={isNumberOfResults}        // let the graph show Once / For each radios
         />
       );
 
-      triggerConditionSection = showCustom ? (
+      triggerConditionSection = (
         <>
-          {this.renderCustomCondition({
-            fieldPath,
-            onUpdate: _.isEmpty(fieldPath)
-              ? () => onRun(this.props.monitorValues)
-              : () => this.onRunExecute(this.props.monitorValues),
-          })}
-          <EuiSpacer size="m" />
+          {isNumberOfResults && numberOfResultsHeader}  {/* operator + number, our aligned header */}
+          {showCustom && (
+            <>
+              {this.renderCustomCondition({
+                fieldPath,
+                onUpdate: _.isEmpty(fieldPath)
+                  ? () => onRun(this.props.monitorValues)
+                  : () => this.onRunExecute(this.props.monitorValues),
+              })}
+              <EuiSpacer size="m" />
+            </>
+          )}
           {graphEl}
         </>
-      ) : (
-        graphEl
       );
+
     } else {
       // QUERY-level monitors (non-graph): swap UI based on Type
       triggerConditionSection =
@@ -517,6 +579,8 @@ class DefineTrigger extends Component {
       </div>
     );
 
+    const TIME_BOX_WIDTH = 300; 
+
     return (
       <OuterAccordion
         id={triggerName}
@@ -542,12 +606,40 @@ class DefineTrigger extends Component {
           )}
 
           {/* Severity + Type */}
-          <EuiFlexGroup gutterSize="m" style={{ paddingLeft: flyoutMode ? 0 : 10 }}>
-            <EuiFlexItem grow={false} style={{ width: 240 }}>
-              {severityField}
+          <EuiFlexGroup {...twoColRowProps} alignItems="flexEnd">
+            {/* Severity (unchanged) */}
+            <EuiFlexItem grow style={HALF_COL}>
+              <FormikSelect
+                name={`${fieldPath}severity`}
+                formRow
+                fieldProps={selectFieldProps}
+                rowProps={{ label: 'Severity level', fullWidth: true, style: { paddingLeft: 0 } }}
+                inputProps={{ options: SEVERITY_OPTIONS, fullWidth: true }}
+              />
             </EuiFlexItem>
-            <EuiFlexItem grow={false} style={{ width: 260 }}>
-              {typeField}
+
+            {/* Type — use the SAME FormikSelect helper so it matches Severity */}
+            <EuiFlexItem grow style={HALF_COL}>
+              <FormikSelect
+                name={`${fieldPath}uiConditionType`}
+                formRow
+                fieldProps={selectFieldProps}
+                rowProps={{ label: 'Type', fullWidth: true, style: { paddingLeft: 0 } }}
+                inputProps={{
+                  options: TYPE_OPTIONS,
+                  fullWidth: true,
+                  // Optional: if you still need to mirror legacy fields when type changes,
+                  // you can add an onChange and set other values here if your FormikSelect
+                  // passes it through. If not, uiConditionType alone is enough because
+                  // your selectedType logic prefers it first.
+                  // onChange: (e) => {
+                  //   const v = e.target.value;
+                  //   formik.setFieldValue(`${fieldPath}type`, v);
+                  //   formik.setFieldValue(`${fieldPath}conditionType`, v);
+                  //   formik.setFieldValue(`${fieldPath}condition`, {...});
+                  // },
+                }}
+              />
             </EuiFlexItem>
           </EuiFlexGroup>
 
@@ -560,25 +652,37 @@ class DefineTrigger extends Component {
 
           {/* Suppress */}
           {suppressToggle}
-
           {suppressEnabled && (
             <>
               <EuiSpacer size="s" />
-              <EuiFlexGroup gutterSize="s" style={{ paddingLeft: '10px' }}>
-                <EuiFlexItem grow={false} style={{ width: 120 }}>
+
+              {/* NEW: free-text filter with constrained width */}
+              <div style={{ paddingLeft: GRID_PAD, maxWidth: SUPPRESS_TEXT_MAX }}>
+                <FormikFieldText
+                  name={`${fieldPath}suppress.fieldValue`}
+                  formRow
+                  rowProps={{ label: 'Suppress results containing field value', fullWidth: true, style: { paddingLeft: 0 } }}
+                  inputProps={{ placeholder: 'field value', fullWidth: true }}
+                />
+              </div>
+              <EuiSpacer size="s" />
+
+              {/* Existing: Suppress for (value + unit) */}
+              <EuiFlexGroup gutterSize="s" style={{ paddingLeft: '10px' }} alignItems="flexEnd">
+                <EuiFlexItem grow={false} style={{ width: TIME_BOX_WIDTH }}>
                   <FormikFieldText
                     name={`${fieldPath}suppress.value`}
                     formRow
-                    rowProps={{ label: 'Suppress for' }}
-                    inputProps={{ type: 'number', min: 1 }}
+                    rowProps={{ label: 'Suppress for', fullWidth: true }}
+                    inputProps={{ type: 'number', min: 1, fullWidth: true }}
                   />
                 </EuiFlexItem>
-                <EuiFlexItem grow={false} style={{ width: 180 }}>
+                <EuiFlexItem grow={false} style={{ width: TIME_BOX_WIDTH }}>
                   <FormikSelect
                     name={`${fieldPath}suppress.unit`}
                     formRow
-                    rowProps={{ label: ' ' }}
-                    inputProps={{ options: DURATION_OPTIONS }}
+                    rowProps={{ hasEmptyLabelSpace: true, fullWidth: true }}
+                    inputProps={{ options: DURATION_OPTIONS, fullWidth: true }}
                   />
                 </EuiFlexItem>
               </EuiFlexGroup>
@@ -587,21 +691,21 @@ class DefineTrigger extends Component {
 
           {/* Expires */}
           <EuiSpacer size="s" />
-          <EuiFlexGroup gutterSize="s" style={{ paddingLeft: '10px' }}>
-            <EuiFlexItem grow={false} style={{ width: 120 }}>
+          <EuiFlexGroup gutterSize="s" style={{ paddingLeft: '10px' }} alignItems="flexEnd">
+            <EuiFlexItem grow={false} style={{ width: TIME_BOX_WIDTH }}>
               <FormikFieldText
                 name={`${fieldPath}expires.value`}
                 formRow
-                rowProps={{ label: 'Expires' }}
-                inputProps={{ type: 'number', min: 1 }}
+                rowProps={{ label: 'Expires', fullWidth: true }}
+                inputProps={{ type: 'number', min: 1, fullWidth: true }}
               />
             </EuiFlexItem>
-            <EuiFlexItem grow={false} style={{ width: 180 }}>
+            <EuiFlexItem grow={false} style={{ width: TIME_BOX_WIDTH }}>
               <FormikSelect
                 name={`${fieldPath}expires.unit`}
                 formRow
-                rowProps={{ label: ' ' }}
-                inputProps={{ options: DURATION_OPTIONS }}
+                rowProps={{ hasEmptyLabelSpace: true, fullWidth: true }}
+                inputProps={{ options: DURATION_OPTIONS, fullWidth: true }}
               />
             </EuiFlexItem>
           </EuiFlexGroup>

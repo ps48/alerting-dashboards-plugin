@@ -68,9 +68,22 @@ export default class MonitorService extends MDSEnabledClientService {
 
   updatePPLMonitor = async (context, req, res) => {
     try {
-      const params = { id: req.params.id, body: req.body };
-      const client = this.getClientBasedOnDataSource(context, req);
-      const resp = await client('alerting.updatePPLMonitor', params);
+     const client = this.getClientBasedOnDataSource(context, req);
+     const id = req.params.id;
+     const ifSeqNo = req.query?.if_seq_no;
+     const ifPrimaryTerm = req.query?.if_primary_term;
+
+     const qs = new URLSearchParams();
+     if (Number.isFinite(Number(ifSeqNo))) qs.append('if_seq_no', String(ifSeqNo));
+     if (Number.isFinite(Number(ifPrimaryTerm))) qs.append('if_primary_term', String(ifPrimaryTerm));
+     const path = `/_plugins/_alerting/v2/monitors/${encodeURIComponent(id)}${qs.toString() ? `?${qs}` : ''}`;
+
+     const resp = await client('transport.request', {
+       method: 'PUT',
+       path,
+       body: req.body,
+       headers: DEFAULT_HEADERS,
+     });
       return res.ok({ body: { ok: true, resp } });
     } catch (err) {
       console.error('Alerting - MonitorService - updatePPLMonitor:', err);
@@ -82,8 +95,37 @@ export default class MonitorService extends MDSEnabledClientService {
     try {
       const params = { id: req.params.id };
       const client = this.getClientBasedOnDataSource(context, req);
-      const resp = await client('alerting.getPPLMonitor', params);
-      return res.ok({ body: { ok: true, resp } });
+      const raw = await client('alerting.getPPLMonitor', params);
+      const id = req.params.id;
+      const monitor =
+        _.get(raw, 'monitor_v2.ppl_monitor') ||
+        _.get(raw, 'ppl_monitor') ||
+        _.get(raw, 'monitor') ||
+        _.get(raw, '_source') ||
+        {};
+
+      // Normalize for UI safety
+      const normalized = {
+        ...monitor,
+        monitor_type: monitor.monitor_type || 'query_level',
+        item_type: monitor.workflow_type || monitor.monitor_type || 'query_level',
+        id,
+        version: _.get(raw, '_version', null),
+      };
+      normalized.triggers = Array.isArray(normalized.triggers) ? normalized.triggers : [];
+      normalized.ui_metadata = normalized.ui_metadata || { triggers: {} };
+
+      return res.ok({
+        body: {
+          ok: true,
+          resp: normalized,
+          version: _.get(raw, '_version', null),
+          ifSeqNo: _.get(raw, '_seq_no', null),
+          ifPrimaryTerm: _.get(raw, '_primary_term', null),
+          activeCount: 0,
+          dayCount: 0,
+        },
+      });
     } catch (err) {
       console.error('Alerting - MonitorService - getPPLMonitor:', err);
       return res.ok({ body: { ok: false, resp: err.message } });
@@ -156,7 +198,7 @@ export default class MonitorService extends MDSEnabledClientService {
        for (const id of ids) {
          try {
            // The new API you added: GET /_plugins/_alerting/v2/monitors/alerts?monitor_id=...
-           const qs = new URLSearchParams({ monitor_id: id }).toString();
+           const qs = new URLSearchParams({ monitorId: id }).toString();
            const path = `/_plugins/_alerting/v2/monitors/alerts?${qs}`;
            const r = await client('transport.request', {
              method: 'GET',
@@ -316,7 +358,11 @@ export default class MonitorService extends MDSEnabledClientService {
       try {
         const v2 = await client('alerting.getPPLMonitor', { id });
         let monitor =
-          _.get(v2, 'ppl_monitor') || _.get(v2, 'monitor') || _.get(v2, '_source') || null;
+          _.get(v2, 'monitor_v2.ppl_monitor') ||
+          _.get(v2, 'ppl_monitor') ||
+          _.get(v2, 'monitor') ||
+          _.get(v2, '_source') ||
+          null;
 
         if (monitor) {
           // Default monitor_type for v2 docs (UI expects it)
@@ -341,12 +387,17 @@ export default class MonitorService extends MDSEnabledClientService {
             (acc, curr) => (curr.key === 'ACTIVE' ? curr.doc_count : acc), 0
           );
 
-          // normalize so UI doesn't choke
+          // normalize so UI doesn't choke AND preserve legacy fields the UI expects
           monitor = {
             ...monitor,
             item_type: monitor.workflow_type || monitor.monitor_type || 'query_level',
-            id,
+            monitor_type: monitor.monitor_type || 'query_level',
+            id,                              // new world
+            _id: id,                         // legacy field
             version: _.get(v2, '_version', null),
+            _version: _.get(v2, '_version', null),       // legacy field
+            _seq_no: _.get(v2, '_seq_no', null),         // legacy field
+            _primary_term: _.get(v2, '_primary_term', null), // legacy field
           };
           monitor.triggers = Array.isArray(monitor.triggers) ? monitor.triggers : [];
           monitor.ui_metadata = monitor.ui_metadata || {};
@@ -406,8 +457,13 @@ export default class MonitorService extends MDSEnabledClientService {
           const safe = {
             ...monitor,
             item_type: monitor.workflow_type || monitor.monitor_type || 'query_level',
+            monitor_type: monitor.monitor_type || 'query_level',
             id,
+            _id: id,
             version,
+            _version: version,
+            _seq_no: ifSeqNo,
+            _primary_term: ifPrimaryTerm,
           };
           safe.triggers = Array.isArray(safe.triggers) ? safe.triggers : [];
           safe.ui_metadata = safe.ui_metadata || {};
@@ -507,6 +563,7 @@ export default class MonitorService extends MDSEnabledClientService {
         const { _version, _id } = resp || {};
         return res.ok({ body: { ok: true, version: _version, id: _id || id } });
       }
+      console.log("went to legacy update");
 
       // Legacy path (only if available)
       const params = { monitorId: id, body: req.body, refresh: 'wait_for' };

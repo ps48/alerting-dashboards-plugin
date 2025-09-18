@@ -27,7 +27,6 @@ const buildLookBackWindowString = (values) => {
   const frequency = values.frequency;
   const enabled = values.useLookBackWindow ?? true;
   if (!enabled) return null;
-  if (frequency !== 'interval' && frequency !== 'cronExpression') return null;
 
   const amount = Number(values.lookBackAmount ?? 1);
   const unit = (values.lookBackUnit || 'hours').toLowerCase(); // seconds|minutes|hours|days
@@ -125,7 +124,8 @@ export function formikToMonitor(values) {
     const schedule = buildSchedule(values.frequency, uiSchedule);
 
     // NEW: compute look back window for interval or cron
-    const lookBack = buildLookBackWindowString(values);
+    const isCron = !!schedule.cron;
+    const lookBack = isCron ? buildLookBackWindowString(values) : null;
 
     const triggers = buildPplTriggers(values);
 
@@ -134,7 +134,7 @@ export function formikToMonitor(values) {
         name: (values.name || 'Untitled monitor').trim(),
         enabled: !values.disabled,
         schedule,
-        look_back_window: lookBack,
+        ...(lookBack ? { look_back_window: lookBack } : {}),
         triggers,
         schema_version: 0,
         query_language: 'ppl',
