@@ -6,20 +6,20 @@
 import React, { Component } from 'react';
 import PropTypes from 'prop-types';
 import _ from 'lodash';
- import {
-  EuiAccordion, 
-  EuiButton, 
-  EuiCallOut, 
-  EuiSpacer, 
-  EuiText, 
+import {
+  EuiAccordion,
+  EuiButton,
+  EuiCallOut,
+  EuiSpacer,
+  EuiText,
   EuiTitle,
-  EuiFlexGroup, 
-  EuiFlexItem, 
-  EuiSelect, 
-  EuiFieldText, 
-  EuiCheckbox, 
+  EuiFlexGroup,
+  EuiFlexItem,
+  EuiSelect,
+  EuiFieldText,
+  EuiCheckbox,
   EuiFormRow,
- } from '@elastic/eui';
+} from '@elastic/eui';
 import { Field, FieldArray } from 'formik';
 import 'brace/mode/plain_text';
 
@@ -43,44 +43,143 @@ import { DEFAULT_TRIGGER_NAME } from '../../utils/constants';
 import { getTriggerContext } from '../../utils/helper';
 import { getDataSourceQueryObj } from '../../../utils/helpers';
 
-/** Normalize PPL preview -> shape that TriggerGraph/TriggerQuery expect */
-const normalizePplPreview = (pplResp, { periodStart, periodEnd } = {}) => {
-  const schema = pplResp?.schema || [];
-  const names = schema.map((c) => c.name);
-  const rows = Array.isArray(pplResp?.datarows) ? pplResp.datarows : [];
+/** ---------------------------------------------
+ * PPL histogram helpers (last 24h)
+ * --------------------------------------------- */
 
-  const tsIdx = names.findIndex((n) => /(^@timestamp$|^span$|time|timestamp)/i.test(n));
-  const valIdx = names.findIndex((n) => /(^total$|count$|doc_count$|value$)/i.test(n));
+// Candidate timestamp fields we try to use when building the histogram
+const TS_CANDIDATES = [
+  '@timestamp',
+  'timestamp',
+  'time',
+  'event_time',
+  'ingest_time',
+  'joined', // covers your example
+  'date',
+];
 
-  let buckets = [];
-  if (tsIdx >= 0 && valIdx >= 0 && rows.length) {
-    buckets = rows
-      .map((r) => ({
-        key: typeof r[tsIdx] === 'string' ? Date.parse(r[tsIdx]) : Number(r[tsIdx]),
-        doc_count: Number(r[valIdx]) || 0,
-      }))
-      .filter((b) => Number.isFinite(b.key));
-  } else {
-    const total = Number(pplResp?.total ?? rows.length ?? 0);
-    buckets = [{ key: periodEnd ?? Date.now(), doc_count: total }];
+const SYNTH_TS = '__ppl_ts';
+
+const pickTimestampFieldFromQuery = (queryText) => {
+  const q = String(queryText || '');
+  for (const name of TS_CANDIDATES) {
+    // loose-ish word boundary match to avoid false positives inside other tokens
+    const re = new RegExp(`(^|[^\\w])${_.escapeRegExp(name)}([^\\w]|$)`, 'i');
+    if (re.test(q)) return name;
   }
-
-  const total = Number(pplResp?.total ?? rows.length ?? 0);
-  return {
-    hits: { total: { value: total } },
-    aggregations: { ppl_histogram: { buckets } },
-  };
+  return null;
 };
 
+// Return true if the query already contains a stats/span aggregation
+const queryLooksAggregated = (queryText) => {
+  const q = String(queryText || '').toLowerCase();
+  return q.includes(' stats ') || q.includes('stats ') || q.includes(' span(');
+};
+
+// Build a histogram query for last 24h (hourly)
+const buildHistogramPpl = (baseQuery, tsField) => {
+  // Prefer explicit tsField, then try to pick from the query; otherwise synthesize one.
+  let ts = tsField || pickTimestampFieldFromQuery(baseQuery);
+  let prefix = '';
+  if (!ts) {
+    ts = SYNTH_TS;
+    prefix = ` | eval ${SYNTH_TS} = NOW()`;
+  }
+
+  // If user query already aggregates, just bound the time window.
+  if (queryLooksAggregated(baseQuery)) { // your existing helper
+    return `${baseQuery}${prefix} | where ${ts} BETWEEN DATE_SUB(NOW(), INTERVAL 1 HOUR) AND NOW()`;
+  }
+
+  // Otherwise add both the time window and an hourly span aggregation
+  return (
+    `${baseQuery}${prefix} ` +
+    `| where ${ts} BETWEEN DATE_SUB(NOW(), INTERVAL 1 HOUR) AND NOW() ` +
+    `| stats count() as total by span(${ts}, 5m)`
+  );
+};
+
+
+// Parse PPL histogram response into { buckets: [{key, doc_count}], total }
+const parsePplHistogram = (pplResp) => {
+  const schema = Array.isArray(pplResp?.schema) ? pplResp.schema : [];
+  const rows = Array.isArray(pplResp?.datarows) ? pplResp.datarows : [];
+
+  // Find a time bucket column and a count column
+  const names = schema.map((c) => (c?.name || '').toLowerCase());
+  // Span column is often literally "span", sometimes "bucket" or similar
+  let spanIdx = names.findIndex((n) => n === 'span' || n.startsWith('span(') || /bucket|window/.test(n));
+  if (spanIdx < 0) {
+    // fallback: any timestamp-looking column
+    spanIdx = schema.findIndex((c) => (c?.type || '').toLowerCase().includes('timestamp'));
+    if (spanIdx < 0) spanIdx = names.findIndex((n) => TS_CANDIDATES.includes(n));
+  }
+
+  // Count is commonly "count" or "count()"
+  let countIdx = names.findIndex((n) => n === 'count' || n === 'count()');
+  if (countIdx < 0) {
+    countIdx = names.findIndex((n) => /(^doc_count$|^total$|value$)/.test(n));
+  }
+
+  let buckets = [];
+  if (rows.length && spanIdx >= 0 && countIdx >= 0) {
+    buckets = rows
+      .map((r) => {
+        const rawTs = r[spanIdx];
+        const epochMs =
+          typeof rawTs === 'string' ? Date.parse(rawTs) : Number(rawTs);
+        return {
+          key: Number.isFinite(epochMs) ? epochMs : Date.now(),
+          doc_count: Number(r[countIdx]) || 0,
+        };
+      })
+      .filter((b) => Number.isFinite(b.key))
+      // ensure chronological order client-side
+      .sort((a, b) => a.key - b.key);
+  }
+
+  // Compute total: either explicit "total" or sum of buckets
+  const total =
+    Number(pplResp?.total) ||
+    buckets.reduce((acc, b) => acc + (Number.isFinite(b.doc_count) ? b.doc_count : 0), 0) ||
+    0;
+
+  return { buckets, total };
+};
+
+// If we couldn't get buckets, synthesize a flat 24h series (so the graph never shows empty state)
+const synthesizeFlat1h = (points = 12, value = 0) => {
+  const now = Date.now();
+  const step = (60 * 60 * 1000) / points; // 5 minutes when points=12
+  return Array.from({ length: points }, (_, i) => ({
+    key: now - (points - i) * step,
+    doc_count: Number(value) || 0,
+  }));
+};
+
+
+// Convert parsed buckets into the VisualGraph-friendly response
+const toGraphResponse = ({ buckets, total }) => ({
+  hits: { total: { value: Math.max(1, Number(total) || 0), relation: 'eq' } },
+  aggregations: {
+    // support multiple common names so downstreams are happy
+    ppl_histogram: { buckets },
+    count_over_time: { buckets },
+    date_histogram: { buckets },
+    combined_value: { buckets },
+  },
+});
+
+/** --------------------------------------------- */
+
 // One source of truth for width & padding so all rows match the name field
-const GRID_MAX = 720;            // tweak to taste; this is the "Trigger name" row width
-const GRID_PAD = 10;             // same left pad you're already using
+const GRID_MAX = 720;
+const GRID_PAD = 10;
 const twoColRowStyle = { paddingLeft: GRID_PAD, maxWidth: GRID_MAX };
 const twoColRowProps = { gutterSize: 'm', responsive: false, alignItems: 'flexEnd', style: twoColRowStyle };
 const HALF_COL = { flexBasis: '50%', minWidth: 0 };
-const TIME_GUTTER_PX = 8; // EUI gutterSize="s" ≈ 8px
+const TIME_GUTTER_PX = 8;
 const SUPPRESS_TEXT_MAX = 300 * 2 + TIME_GUTTER_PX;
-
 
 const defaultRowProps = {
   label: 'Trigger name',
@@ -99,7 +198,6 @@ const THRESHOLD_OPTIONS = [
 ];
 
 const defaultInputProps = { isInvalid };
-
 const selectFieldProps = { validate: () => {} };
 
 const selectRowProps = {
@@ -159,7 +257,8 @@ class DefineTrigger extends Component {
       OuterAccordion: props.flyoutMode ? ({ children }) => <>{children}</> : EuiAccordion,
       currentSubmitCount: 0,
       accordionsOpen: {},
-      executeResponse: undefined,
+      executeResponse: undefined,   // legacy path
+      graphResponse: undefined,     // NEW: direct histogram for PPL
     };
   }
 
@@ -167,6 +266,8 @@ class DefineTrigger extends Component {
     const {
       monitorValues: { searchType, uri },
     } = this.props;
+
+    // Always kick off an initial preview so the graph draws
     switch (searchType) {
       case SEARCH_TYPE.CLUSTER_METRICS:
         if (canExecuteClusterMetricsMonitor(uri)) this.onRunExecute(this.props.monitorValues);
@@ -188,41 +289,44 @@ class DefineTrigger extends Component {
       !!monitor?.ppl_monitor ||
       !!formikValues?.pplQuery;
 
-    // --- PPL PREVIEW (NO alerting execute): POST /_plugins/_ppl { query }
+    // --- PPL PREVIEW (V2): POST /_plugins/_ppl with a histogram query ---
     if (isPPL) {
-      const pplQuery =
+      const basePpl =
         formikValues?.pplQuery ||
         monitor?.ppl_monitor?.query ||
         monitor?.query ||
-        ''; // empty still returns a 400 from PPL
+        '';
+
+      const tsField = pickTimestampFieldFromQuery(basePpl);
+      const histogramQuery = buildHistogramPpl(basePpl, tsField);
 
       const dataSourceQuery = getDataSourceQueryObj();
       httpClient
         .post('../_plugins/_ppl', {
-          body: JSON.stringify({ query: pplQuery }),
+          body: JSON.stringify({ query: histogramQuery }),
           query: dataSourceQuery?.query,
         })
         .then((resp) => {
           if (resp.ok) {
-            const now = Date.now();
-            const normalized = normalizePplPreview(resp.resp, {
-              periodStart: now - 60 * 1000,
-              periodEnd: now,
-            });
-            // Normalize to the shape other UI parts expect
-            const wrapped = {
-              ok: true,
-              period_start: now - 60 * 1000,
-              period_end: now,
-              input_results: { results: [normalized] },
-              error: null,
-            };
-            this.setState({ executeResponse: wrapped });
+            const { buckets, total } = parsePplHistogram(resp.resp);
+
+            const finalBuckets = buckets.length > 1 ? buckets : synthesizeFlat1h(12, total);
+            const graphResponse = toGraphResponse({ buckets: finalBuckets, total });
+
+            // Store the graph response directly; no execute-style wrapper
+            this.setState({ graphResponse });
           } else {
             backendErrorNotification(notifications, 'preview', 'query', resp.resp);
+            // Keep a flat series so the graph renders even on error
+            const graphResponse = toGraphResponse({ buckets: synthesizeFlat1h(0), total: 0 });
+            this.setState({ graphResponse });
           }
         })
-        .catch(() => {});
+        .catch(() => {
+          const graphResponse = toGraphResponse({ buckets: synthesizeFlat1h(0), total: 0 });
+          this.setState({ graphResponse });
+        });
+
       return;
     }
 
@@ -249,14 +353,14 @@ class DefineTrigger extends Component {
     }
 
     const dataSourceQuery = getDataSourceQueryObj();
-    httpClient
+    this.props.httpClient
       .post('../api/alerting/monitors/_execute', {
         body: JSON.stringify(monitorToExecute),
         query: dataSourceQuery?.query,
       })
       .then((resp) => {
         if (resp.ok) this.setState({ executeResponse: resp.resp });
-        else backendErrorNotification(notifications, 'run', 'trigger', resp.resp);
+        else backendErrorNotification(this.props.notifications, 'run', 'trigger', resp.resp);
       })
       .catch(() => {});
   };
@@ -272,12 +376,10 @@ class DefineTrigger extends Component {
     <div style={{ paddingLeft: GRID_PAD, maxWidth: GRID_MAX }}>
       <EuiFormRow label="Trigger condition" fullWidth>
         <>
-          {/* helper text directly under the label */}
           <EuiText size="xs" color="subdued" style={{ marginBottom: 8 }}>
             Add a custom condition to append to your existing query.
           </EuiText>
 
-          {/* input + button on one line; bar will match Trigger name width */}
           <EuiFlexGroup gutterSize="s" alignItems="center" responsive={false}>
             <EuiFlexItem>
               <Field name={`${fieldPath}customCondition`}>
@@ -301,7 +403,6 @@ class DefineTrigger extends Component {
         </>
       </EuiFormRow>
 
-      {/* optional footnote, still aligned */}
       <EuiText color="subdued" size="xs" style={{ marginTop: 4 }}>
         condition should be limited to supported functions.
       </EuiText>
@@ -309,7 +410,7 @@ class DefineTrigger extends Component {
   );
 
   render() {
-    const { OuterAccordion, accordionsOpen, currentSubmitCount, executeResponse } = this.state;
+    const { OuterAccordion, accordionsOpen, currentSubmitCount, executeResponse, graphResponse } = this.state;
     const {
       edit,
       triggerArrayHelpers,
@@ -331,6 +432,8 @@ class DefineTrigger extends Component {
     } = this.props;
 
     const hasNotificationPlugin = plugins?.indexOf(OS_NOTIFICATION_PLUGIN) !== -1;
+
+    // Legacy context still uses executeResponse; PPL path uses graphResponse directly
     const ctxExec = executeResponse ?? this.props.executeResponse;
     const context = getTriggerContext(ctxExec, monitor, triggerValues, triggerIndex);
 
@@ -339,7 +442,8 @@ class DefineTrigger extends Component {
     const isAd = _.get(monitorValues, 'searchType') === SEARCH_TYPE.AD;
 
     const detectorId = _.get(monitorValues, 'detectorId');
-    const response = _.get(ctxExec, 'input_results.results[0]');
+    // Prefer direct PPL histogram; otherwise legacy execute shape
+    const response = graphResponse || _.get(ctxExec, 'input_results.results[0]');
     const error = _.get(ctxExec, 'error') || _.get(ctxExec, 'input_results.error');
 
     const thresholdEnum = _.get(triggerValues, `${fieldPath}thresholdEnum`);
@@ -367,7 +471,7 @@ class DefineTrigger extends Component {
       _.get(triggerValues, `${fieldPath}conditionType`) ||
       _.get(triggerValues, `${fieldPath}condition?.type`) ||
       'number_of_results';
-    
+
     const isNumberOfResults = selectedType === 'number_of_results';
 
     const isPpl =
@@ -379,7 +483,8 @@ class DefineTrigger extends Component {
     //  - the normalized PPL buckets are present on the response
     const hasPplBuckets =
       _.get(response, 'aggregations.ppl_histogram.buckets.length', 0) > 0 ||
-      _.get(response, 'aggregations.count_over_time.buckets.length', 0) > 0;
+      _.get(response, 'aggregations.count_over_time.buckets.length', 0) > 0 ||
+      _.get(response, 'aggregations.date_histogram.buckets.length', 0) > 0;
     const isGraph = isGraphLegacy || (isPpl && selectedType === 'number_of_results') || hasPplBuckets;
 
     // Name
@@ -396,55 +501,8 @@ class DefineTrigger extends Component {
       />
     );
 
-    // Severity
-    const severityField = (
-      <FormikSelect
-        name={`${fieldPath}severity`}
-        formRow
-        fieldProps={selectFieldProps}
-        rowProps={{ ...selectRowProps, ...(flyoutMode ? { style: {} } : {}) }}
-        inputProps={selectInputProps}
-      />
-    );
-
-    // Type
-    // Make Type fullWidth too
-    const typeField = (
-      <EuiFormRow label="Type" fullWidth style={{ paddingLeft: 0 }}>
-        <Field name={`${fieldPath}uiConditionType`}>
-          {({ field, form }) => {
-            const derived =
-              field.value ||
-              _.get(triggerValues, `${fieldPath}type`) ||
-              _.get(triggerValues, `${fieldPath}conditionType`) ||
-              _.get(triggerValues, `${fieldPath}condition?.type`) ||
-              'number_of_results';
-            return (
-              <EuiSelect
-                options={TYPE_OPTIONS}
-                value={derived}
-                fullWidth
-                onChange={(e) => {
-                  const v = e.target.value;
-                  form.setFieldValue(`${fieldPath}uiConditionType`, v);
-                  form.setFieldValue(`${fieldPath}type`, v);
-                  form.setFieldValue(`${fieldPath}conditionType`, v);
-                  form.setFieldValue(`${fieldPath}condition`, {
-                    ...(_.get(triggerValues, `${fieldPath}condition`) || {}),
-                    type: v,
-                  });
-                }}
-                data-test-subj="triggerType"
-              />
-            );
-          }}
-        </Field>
-      </EuiFormRow>
-    );
-
     const numberOfResultsHeader = isNumberOfResults ? (
       <>
-        {/* Trigger condition row: left = operator, right = number value */}
         <EuiFlexGroup {...twoColRowProps}>
           <EuiFlexItem grow>
             <FormikSelect
@@ -464,17 +522,38 @@ class DefineTrigger extends Component {
           </EuiFlexItem>
         </EuiFlexGroup>
 
-        {/* Trigger radios on the left; blank right col to keep grid */}
         <EuiFlexGroup {...twoColRowProps}>
-          <EuiFlexItem grow>
-            {/* your existing radio group goes here */}
-          </EuiFlexItem>
+          <EuiFlexItem grow>{/* radio group lives here if needed */}</EuiFlexItem>
           <EuiFlexItem grow />
         </EuiFlexGroup>
       </>
     ) : null;
 
-    // Build the section that lives where the Trigger condition row is.
+    // Severity + Type
+    const severityAndTypeRow = (
+      <EuiFlexGroup {...twoColRowProps} alignItems="flexEnd">
+        <EuiFlexItem grow style={HALF_COL}>
+          <FormikSelect
+            name={`${fieldPath}severity`}
+            formRow
+            fieldProps={selectFieldProps}
+            rowProps={{ label: 'Severity level', fullWidth: true, style: { paddingLeft: 0 } }}
+            inputProps={{ options: SEVERITY_OPTIONS, fullWidth: true }}
+          />
+        </EuiFlexItem>
+        <EuiFlexItem grow style={HALF_COL}>
+          <FormikSelect
+            name={`${fieldPath}uiConditionType`}
+            formRow
+            fieldProps={selectFieldProps}
+            rowProps={{ label: 'Type', fullWidth: true, style: { paddingLeft: 0 } }}
+            inputProps={{ options: TYPE_OPTIONS, fullWidth: true }}
+          />
+        </EuiFlexItem>
+      </EuiFlexGroup>
+    );
+
+    // Build the section for the condition UI
     let triggerConditionSection;
     if (isAd && adTriggerType === TRIGGER_TYPE.AD) {
       const adValues = _.get(triggerValues, `${fieldPath}anomalyDetector`);
@@ -487,32 +566,30 @@ class DefineTrigger extends Component {
         />
       );
     } else if (isGraph) {
-      // GRAPH or PPL(Number of results): show graph; if Custom, show textbox+graph
-      // --- Graph path ---
       const showCustom = selectedType === 'custom';
 
       const graphEl = (
         <TriggerGraph
           monitorValues={monitorValues}
-          response={response}
-          thresholdEnum={thresholdEnum}
-          thresholdValue={thresholdValue}
+          response={response}                 // << direct histogram for PPL
+          thresholdEnum={_.get(triggerValues, `${fieldPath}thresholdEnum`)}
+          thresholdValue={_.get(triggerValues, `${fieldPath}thresholdValue`)}
           fieldPath={fieldPath}
           flyoutMode={flyoutMode}
-          hideThresholdControls={true}                 // we render threshold fields ourselves
-          showModeSelector={isNumberOfResults}        // let the graph show Once / For each radios
+          hideThresholdControls={true}
+          showModeSelector={isNumberOfResults}
         />
       );
 
       triggerConditionSection = (
         <>
-          {isNumberOfResults && numberOfResultsHeader}  {/* operator + number, our aligned header */}
+          {isNumberOfResults && numberOfResultsHeader}
           {showCustom && (
             <>
               {this.renderCustomCondition({
                 fieldPath,
                 onUpdate: _.isEmpty(fieldPath)
-                  ? () => onRun(this.props.monitorValues)
+                  ? () => this.onRunExecute(this.props.monitorValues)
                   : () => this.onRunExecute(this.props.monitorValues),
               })}
               <EuiSpacer size="m" />
@@ -521,27 +598,22 @@ class DefineTrigger extends Component {
           {graphEl}
         </>
       );
-
     } else {
-      // QUERY-level monitors (non-graph): swap UI based on Type
+      // Non-graph query monitors: show editor + preview response
       triggerConditionSection =
         selectedType === 'custom' ? (
           this.renderCustomCondition({
             fieldPath,
             onUpdate: _.isEmpty(fieldPath)
-              ? () => onRun(this.props.monitorValues)
+              ? () => this.onRunExecute(this.props.monitorValues)
               : () => this.onRunExecute(this.props.monitorValues),
           })
         ) : (
           <TriggerQuery
             context={context}
             error={error}
-            executeResponse={ctxExec}
-            onRun={
-              _.isEmpty(fieldPath)
-                ? () => onRun(this.props.monitorValues)
-                : () => this.onRunExecute(this.props.monitorValues)
-            }
+            executeResponse={executeResponse}
+            onRun={() => this.onRunExecute(this.props.monitorValues)}
             response={response}
             setFlyout={setFlyout}
             triggerValues={triggerValues}
@@ -579,7 +651,7 @@ class DefineTrigger extends Component {
       </div>
     );
 
-    const TIME_BOX_WIDTH = 300; 
+    const TIME_BOX_WIDTH = 300;
 
     return (
       <OuterAccordion
@@ -605,47 +677,11 @@ class DefineTrigger extends Component {
             </>
           )}
 
-          {/* Severity + Type */}
-          <EuiFlexGroup {...twoColRowProps} alignItems="flexEnd">
-            {/* Severity (unchanged) */}
-            <EuiFlexItem grow style={HALF_COL}>
-              <FormikSelect
-                name={`${fieldPath}severity`}
-                formRow
-                fieldProps={selectFieldProps}
-                rowProps={{ label: 'Severity level', fullWidth: true, style: { paddingLeft: 0 } }}
-                inputProps={{ options: SEVERITY_OPTIONS, fullWidth: true }}
-              />
-            </EuiFlexItem>
-
-            {/* Type — use the SAME FormikSelect helper so it matches Severity */}
-            <EuiFlexItem grow style={HALF_COL}>
-              <FormikSelect
-                name={`${fieldPath}uiConditionType`}
-                formRow
-                fieldProps={selectFieldProps}
-                rowProps={{ label: 'Type', fullWidth: true, style: { paddingLeft: 0 } }}
-                inputProps={{
-                  options: TYPE_OPTIONS,
-                  fullWidth: true,
-                  // Optional: if you still need to mirror legacy fields when type changes,
-                  // you can add an onChange and set other values here if your FormikSelect
-                  // passes it through. If not, uiConditionType alone is enough because
-                  // your selectedType logic prefers it first.
-                  // onChange: (e) => {
-                  //   const v = e.target.value;
-                  //   formik.setFieldValue(`${fieldPath}type`, v);
-                  //   formik.setFieldValue(`${fieldPath}conditionType`, v);
-                  //   formik.setFieldValue(`${fieldPath}condition`, {...});
-                  // },
-                }}
-              />
-            </EuiFlexItem>
-          </EuiFlexGroup>
+          {severityAndTypeRow}
 
           <EuiSpacer size="m" />
 
-          {/* Trigger condition area (replaced when Type = Custom) */}
+          {/* Trigger condition area */}
           {triggerConditionSection}
 
           <EuiSpacer size="l" />
@@ -655,8 +691,6 @@ class DefineTrigger extends Component {
           {suppressEnabled && (
             <>
               <EuiSpacer size="s" />
-
-              {/* NEW: free-text filter with constrained width */}
               <div style={{ paddingLeft: GRID_PAD, maxWidth: SUPPRESS_TEXT_MAX }}>
                 <FormikFieldText
                   name={`${fieldPath}suppress.fieldValue`}
@@ -666,8 +700,6 @@ class DefineTrigger extends Component {
                 />
               </div>
               <EuiSpacer size="s" />
-
-              {/* Existing: Suppress for (value + unit) */}
               <EuiFlexGroup gutterSize="s" style={{ paddingLeft: '10px' }} alignItems="flexEnd">
                 <EuiFlexItem grow={false} style={{ width: TIME_BOX_WIDTH }}>
                   <FormikFieldText
@@ -682,7 +714,12 @@ class DefineTrigger extends Component {
                     name={`${fieldPath}suppress.unit`}
                     formRow
                     rowProps={{ hasEmptyLabelSpace: true, fullWidth: true }}
-                    inputProps={{ options: DURATION_OPTIONS, fullWidth: true }}
+                    inputProps={{ options: [
+                      { value: 'seconds', text: 'second(s)' },
+                      { value: 'minutes', text: 'minute(s)' },
+                      { value: 'hours', text: 'hour(s)' },
+                      { value: 'days', text: 'day(s)' },
+                    ], fullWidth: true }}
                   />
                 </EuiFlexItem>
               </EuiFlexGroup>
@@ -705,7 +742,12 @@ class DefineTrigger extends Component {
                 name={`${fieldPath}expires.unit`}
                 formRow
                 rowProps={{ hasEmptyLabelSpace: true, fullWidth: true }}
-                inputProps={{ options: DURATION_OPTIONS, fullWidth: true }}
+                inputProps={{ options: [
+                  { value: 'seconds', text: 'second(s)' },
+                  { value: 'minutes', text: 'minute(s)' },
+                  { value: 'hours', text: 'hour(s)' },
+                  { value: 'days', text: 'day(s)' },
+                ], fullWidth: true }}
               />
             </EuiFlexItem>
           </EuiFlexGroup>

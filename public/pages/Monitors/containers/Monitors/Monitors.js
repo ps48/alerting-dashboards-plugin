@@ -76,8 +76,16 @@ export default class Monitors extends Component {
     this.onClickCancel = this.onClickCancel.bind(this);
     this.resetFilters = this.resetFilters.bind(this);
 
+    // Hide columns we don't want to show on the Monitors table
+    const HIDDEN_COLS = new Set([
+      'Active',
+      'Acknowledged',
+      'Errors',
+      'Ignored',
+      'Associations with composite monitors',
+    ]);
     this.columns = [
-      ...staticColumns,
+      ...staticColumns.filter((c) => !HIDDEN_COLS.has(c.name)),
       {
         name: 'Actions',
         width: '60px',

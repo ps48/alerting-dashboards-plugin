@@ -39,32 +39,15 @@ import { buildClusterMetricsRequest } from '../../../../CreateMonitor/components
 import { getTimeZone } from '../../../utils/helper';
 import { getDataSourceQueryObj } from '../../../../utils/helpers';
 
-/** Normalize PPL preview -> shape that TriggerGraph/TriggerQuery expect */
-const normalizePplPreview = (pplResp, { periodStart, periodEnd } = {}) => {
-  const schema = pplResp?.schema || [];
-  const names = schema.map((c) => c.name);
-  const rows = Array.isArray(pplResp?.datarows) ? pplResp.datarows : [];
-
-  const tsIdx = names.findIndex((n) => /(^@timestamp$|^span$|time|timestamp)/i.test(n));
-  const valIdx = names.findIndex((n) => /(^total$|count$|doc_count$|value$)/i.test(n));
-
-  let buckets = [];
-  if (tsIdx >= 0 && valIdx >= 0 && rows.length) {
-    buckets = rows
-      .map((r) => ({
-        key: typeof r[tsIdx] === 'string' ? Date.parse(r[tsIdx]) : Number(r[tsIdx]),
-        doc_count: Number(r[valIdx]) || 0,
-      }))
-      .filter((b) => Number.isFinite(b.key));
-  } else {
-    const total = Number(pplResp?.total ?? rows.length ?? 0);
-    buckets = [{ key: periodEnd ?? Date.now(), doc_count: total }];
-  }
-
-  const total = Number(pplResp?.total ?? rows.length ?? 0);
+/** Normalize PPL preview -> 1h shape that TriggerGraph/TriggerQuery expect */
+const build1hSeriesFromTotal = (pplResp, now = Date.now()) => {
+  const HOUR = 60 * 60 * 1000;
+  const total = Number(pplResp?.total ?? pplResp?.datarows?.length ?? 0) || 0;
+  const buckets = [{ key: now - HOUR, doc_count: total }];
   return {
     hits: { total: { value: total } },
     aggregations: { ppl_histogram: { buckets } },
+    ppl_raw: pplResp,
   };
 };
 
@@ -182,14 +165,11 @@ export default class CreateTrigger extends Component {
         .then((resp) => {
           if (resp.ok) {
             const now = Date.now();
-            const normalized = normalizePplPreview(resp.resp, {
-              periodStart: now - 60 * 1000,
-              periodEnd: now,
-            });
+            const normalized = build1hSeriesFromTotal(resp.resp, now);
             const wrapped = {
               ok: true,
-              period_start: now - 60 * 1000,
-              period_end: now,
+              period_start: now - 60 * 60 * 1000, // last 1h
+              period_end: now,                    // now
               input_results: { results: [normalized] },
               error: null,
             };

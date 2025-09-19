@@ -78,7 +78,7 @@ export default class Dashboard extends Component {
       sortField,
       totalAlerts: 0,
       totalTriggers: 0,
-      chainedAlert: undefined,
+      //chainedAlert: undefined,
       commentsEnabled: false,
       isAgentConfigured: false,
     };
@@ -330,13 +330,13 @@ export default class Dashboard extends Component {
     }
   };
 
-  openChainedAlertsFlyout = (chainedAlert) => {
-    this.setState({ chainedAlert });
-  };
+  // openChainedAlertsFlyout = (chainedAlert) => {
+  //   this.setState({ chainedAlert });
+  // };
 
-  closeChainedAlertsFlyout = () => {
-    this.setState({ chainedAlert: undefined });
-  };
+  // closeChainedAlertsFlyout = () => {
+  //   this.setState({ chainedAlert: undefined });
+  // };
 
   closeFlyout = () => {
     const { setFlyout } = this.props;
@@ -397,7 +397,7 @@ export default class Dashboard extends Component {
       alerts,
       alertsByTriggers,
       alertState,
-      chainedAlert,
+      //chainedAlert,
       flyoutIsOpen,
       loadingMonitors,
       monitors,
@@ -458,26 +458,26 @@ export default class Dashboard extends Component {
           break;
         case MONITOR_TYPE.COMPOSITE_LEVEL:
           columns = _.cloneDeep(queryColumns);
-          columns.push({
-            name: 'Actions',
-            sortable: false,
-            actions: [
-              {
-                render: (alert) => (
-                  <EuiToolTip content={'View details'}>
-                    <EuiSmallButtonIcon
-                      aria-label={'View details'}
-                      data-test-subj={`view-details-icon`}
-                      iconType={'inspect'}
-                      onClick={() => {
-                        this.openChainedAlertsFlyout(alert);
-                      }}
-                    />
-                  </EuiToolTip>
-                ),
-              },
-            ],
-          });
+//           -          columns.push({
+// -            name: 'Actions',
+// -            sortable: false,
+// -            actions: [
+// -              {
+// -                render: (alert) => (
+// -                  <EuiToolTip content={'View details'}>
+// -                    <EuiSmallButtonIcon
+// -                      aria-label={'View details'}
+// -                      data-test-subj={`view-details-icon`}
+// -                      iconType={'inspect'}
+// -                      onClick={() => {
+// -                        this.openChainedAlertsFlyout(alert);
+// -                      }}
+// -                    />
+// -                  </EuiToolTip>
+// -                ),
+// -              },
+// -            ],
+// -          });
           break;
         default:
           columns = _.cloneDeep(queryColumns);
@@ -589,13 +589,13 @@ export default class Dashboard extends Component {
 
     return (
       <>
-        {chainedAlert && (
+        {/* {chainedAlert && (
           <ChainedAlertDetailsFlyout
             httpClient={httpClient}
             closeFlyout={this.closeChainedAlertsFlyout}
             alert={chainedAlert}
           />
-        )}
+        )} */}
         <ContentPanel
           title={perAlertView ? 'Alerts' : useUpdatedUx ? undefined : 'Alerts by triggers'}
           titleSize={'s'}

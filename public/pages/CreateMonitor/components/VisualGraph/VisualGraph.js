@@ -71,7 +71,7 @@ export default class VisualGraph extends Component {
     const markData = getMarkData(data);
     const title = aggregationType
       ? `${aggregationType?.toUpperCase()} OF ${fieldName}`
-      : 'COUNT of documents';
+      : 'Results';
     const description = getGraphDescription(bucketValue, bucketUnitOfTime, groupBy);
 
     return (
@@ -182,7 +182,26 @@ export default class VisualGraph extends Component {
     const monitorType = values.monitor_type;
     const isQueryMonitor = monitorType === MONITOR_TYPE.QUERY_LEVEL;
     const aggTypeFieldName = `${aggregationType}_${fieldName}`;
-    const data = getDataFromResponse(response, aggTypeFieldName, monitorType);
+    // First try the existing helper…
+    let data = getDataFromResponse(response, aggTypeFieldName, monitorType);
+
+    // …then fall back to our normalized PPL buckets (count_over_time / date_histogram / ppl_histogram).
+    if (!data || data.length === 0) {
+      const buckets =
+        _.get(response, 'aggregations.count_over_time.buckets') ||
+        _.get(response, 'aggregations.date_histogram.buckets') ||
+        _.get(response, 'aggregations.ppl_histogram.buckets') ||
+        _.get(response, 'aggregations.combined_value.buckets') ||
+        [];
+      if (buckets.length) {
+        data = buckets
+          .map((b) => ({
+            x: new Date(Number.isFinite(b.key) ? b.key : Date.parse(b.key)),
+            y: Number(b.doc_count) || 0,
+          }))
+          .filter((p) => p.x instanceof Date && !isNaN(p.x.getTime()));
+      }
+    }
     const groupedData = isQueryMonitor
       ? null
       : getMapDataFromResponse(response, aggTypeFieldName, values.groupBy);
@@ -190,7 +209,11 @@ export default class VisualGraph extends Component {
     const showEmpty = !data.length || (!isQueryMonitor && !values.groupBy.length);
 
     if (showEmpty) return <>{this.renderEmptyData()}</>;
-    else if (isQueryMonitor) return <>{this.renderXYPlot(data)}</>;
+    else if (isQueryMonitor) {
+      // Ensure we have an X-axis title even for PPL flow (no timeField in values).
+      values.timeField = values.timeField || 'Time';
+      return <>{this.renderXYPlot(data)}</>;
+    }
     else return <>{this.renderAggregationXYPlot(data, groupedData)}</>;
   }
 }

@@ -35,34 +35,15 @@ import DefineCompositeLevelTrigger from '../DefineCompositeLevelTrigger';
 import EnhancedAccordion from '../../../../components/FeatureAnywhereContextMenu/EnhancedAccordion';
 import { getDataSourceQueryObj } from '../../../../../public/pages/utils/helpers';
 
-/** Normalize PPL preview -> shape that TriggerGraph/TriggerQuery expect */
-const normalizePplPreview = (pplResp, { periodStart, periodEnd } = {}) => {
-  const schema = pplResp?.schema || [];
-  const names = schema.map((c) => c.name);
-  const rows = Array.isArray(pplResp?.datarows) ? pplResp.datarows : [];
-
-  // Try to find timestamp and value columns
-  const tsIdx = names.findIndex((n) => /(^@timestamp$|^span$|time|timestamp)/i.test(n));
-  const valIdx = names.findIndex((n) => /(^total$|count$|doc_count$|value$)/i.test(n));
-
-  let buckets = [];
-  if (tsIdx >= 0 && valIdx >= 0 && rows.length) {
-    buckets = rows
-      .map((r) => ({
-        key: typeof r[tsIdx] === 'string' ? Date.parse(r[tsIdx]) : Number(r[tsIdx]),
-        doc_count: Number(r[valIdx]) || 0,
-      }))
-      .filter((b) => Number.isFinite(b.key));
-  } else {
-    // Fallback: single bar from top-level total (or row count)
-    const total = Number(pplResp?.total ?? rows.length ?? 0);
-    buckets = [{ key: periodEnd ?? Date.now(), doc_count: total }];
-  }
-
-  const total = Number(pplResp?.total ?? rows.length ?? 0);
+/** Normalize PPL preview -> 1h series where the single bar = pplResp.total */
+const build1hSeriesFromTotal = (pplResp, now = Date.now()) => {
+  const HOUR = 60 * 60 * 1000;
+  const total = Number(pplResp?.total ?? pplResp?.datarows?.length ?? 0) || 0;
+  const buckets = [{ key: now - HOUR, doc_count: total }];
   return {
     hits: { total: { value: total } },
     aggregations: { ppl_histogram: { buckets } },
+    ppl_raw: pplResp,
   };
 };
 
@@ -217,13 +198,10 @@ class ConfigureTriggers extends React.Component {
         .then((resp) => {
           if (resp.ok) {
             const now = Date.now();
-            const normalized = normalizePplPreview(resp.resp, {
-              periodStart: now - 60 * 1000,
-              periodEnd: now,
-            });
+            const normalized = build1hSeriesFromTotal(resp.resp, now);
             const wrapped = {
               ok: true,
-              period_start: now - 60 * 1000,
+              period_start: now - 60 * 60 * 1000, // last 1h
               period_end: now,
               input_results: { results: [normalized] },
               error: null,

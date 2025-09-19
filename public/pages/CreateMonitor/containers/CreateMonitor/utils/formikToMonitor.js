@@ -123,8 +123,6 @@ export function formikToMonitor(values) {
     const uiSchedule = formikToUiSchedule(values);
     const schedule = buildSchedule(values.frequency, uiSchedule);
 
-    // NEW: compute look back window for interval or cron
-    const isCron = !!schedule.cron;
     const lookBack = isCron ? buildLookBackWindowString(values) : null;
 
     const triggers = buildPplTriggers(values);
@@ -135,7 +133,7 @@ export function formikToMonitor(values) {
         enabled: !values.disabled,
         schedule,
         ...(lookBack ? { look_back_window: lookBack } : {}),
-        triggers,
+        triggers: (triggers || []).map((t) => ({ ...t, severity: String(t.severity || 'INFO').toUpperCase() })),
         schema_version: 0,
         query_language: 'ppl',
         query: values.pplQuery || '',

@@ -58,14 +58,14 @@ export const queryColumns = [
         typeof state !== 'string' ? DEFAULT_EMPTY_DATA : _.capitalize(state.toLowerCase());
       return state === ALERT_STATE.ERROR ? `${stateText}: ${alert.error_message}` : stateText;
     },
-  },
-  {
-    field: 'acknowledged_time',
-    name: 'Time acknowledged',
-    sortable: true,
-    truncateText: false,
-    render: renderTime,
-    dataType: 'date',
+  // },
+  // {
+  //   field: 'acknowledged_time',
+  //   name: 'Time acknowledged',
+  //   sortable: true,
+  //   truncateText: false,
+  //   render: renderTime,
+  //   dataType: 'date',
   },
 ];
 
@@ -169,24 +169,6 @@ export const alertColumns = (
         </AlertInsight>
       );
     },
-  },
-  {
-    field: 'ACTIVE',
-    name: 'Active',
-    sortable: true,
-    truncateText: false,
-  },
-  {
-    field: 'ACKNOWLEDGED',
-    name: 'Acknowledged',
-    sortable: true,
-    truncateText: false,
-  },
-  {
-    field: 'ERROR',
-    name: 'Errors',
-    sortable: true,
-    truncateText: false,
   },
   {
     field: 'trigger_name',

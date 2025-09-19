@@ -498,7 +498,6 @@ export const buildPPLMonitorFromFormik = (values) => {
 
     // Per API: include look_back_window only for CRON schedules
     const schedule = pplToV2Schedule(values);
-    const isCron = !!schedule.cron;
     const lookBack = isCron ? buildLookBackFromFormik(values) : null;
 
   return {
