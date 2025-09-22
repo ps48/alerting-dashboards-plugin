@@ -361,7 +361,10 @@ const getTimezoneString = (values) => {
 };
 
 export const pplToV2Schedule = (values) => {
-  if (values.frequency === 'interval') {
+  const tz = getTimezoneString(values);
+  const freq = values.frequency;
+
+  if (freq === 'interval') {
     return {
       period: {
         interval: Number(values.period?.interval || 1),
@@ -369,15 +372,34 @@ export const pplToV2Schedule = (values) => {
       },
     };
   }
-  if (values.frequency === 'cronExpression' && values.cronExpression) {
-    return {
-      cron: {
-        expression: values.cronExpression,
-        timezone: getTimezoneString(values),
-      },
-    };
+
+  if (freq === 'daily') {
+    // `daily` is expected to be "<minute> <hour>" like legacy buildSchedule
+    const daily = values.daily || '0 0';
+    return { cron: { expression: `0 ${daily} * * *`, timezone: tz } };
   }
-  // fallback
+
+  if (freq === 'weekly') {
+    const daily = values.daily || '0 0';
+    const daysOfWeek = Object.entries(values.weekly || {})
+      .filter(([_, checked]) => checked)
+      .map(([dayName]) => dayName.toUpperCase())
+      .join(',');
+    return { cron: { expression: `0 ${daily} * * ${daysOfWeek || '*'}`, timezone: tz } };
+  }
+
+  if (freq === 'monthly') {
+    const daily = values.daily || '0 0';
+    const { type, day } = values.monthly || {};
+    const dayOfMonth = type === 'day' ? day : '?';
+    return { cron: { expression: `0 ${daily} ${dayOfMonth} */1 *`, timezone: tz } };
+  }
+
+  if (freq === 'cronExpression' && values.cronExpression) {
+    return { cron: { expression: values.cronExpression, timezone: tz } };
+  }
+
+  // Fallback: 1 minute interval
   return {
     period: {
       interval: 1,
@@ -477,9 +499,12 @@ const formikPplTriggerToWire = (t, i = 0) => {
  * Shape: { "ppl_monitor": { ... } }
  */
 export const buildPPLMonitorFromFormik = (values) => {
+  const schedule = pplToV2Schedule(values);
+  const lookBack = buildLookBackFromFormik(values); // null if disabled
+
   const defs = Array.isArray(values.triggerDefinitions) ? values.triggerDefinitions : [];
   const triggers = defs.length
-    ? defs.map(formikPplTriggerToWire)
+    ? defs.map((t, i) => formikPplTriggerToWire(t, i))
     : [
         {
           name: 'trigger1',
@@ -496,16 +521,12 @@ export const buildPPLMonitorFromFormik = (values) => {
         },
       ];
 
-    // Per API: include look_back_window only for CRON schedules
-    const schedule = pplToV2Schedule(values);
-    const lookBack = isCron ? buildLookBackFromFormik(values) : null;
-
   return {
     ppl_monitor: {
       name: values.name || 'Untitled monitor',
       enabled: !values.disabled,
       schedule,
-      ...(lookBack ? { look_back_window: lookBack } : {}),
+      ...(lookBack ? { look_back_window: lookBack } : {}), // <- apply for ALL schedule types
       triggers,
       schema_version: 0,
       query_language: 'ppl',
@@ -513,6 +534,7 @@ export const buildPPLMonitorFromFormik = (values) => {
     },
   };
 };
+
 
 /** Build compact look back window string from Formik values, e.g. "15m" */
 const buildLookBackFromFormik = (values) => {
