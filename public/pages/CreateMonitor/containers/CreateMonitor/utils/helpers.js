@@ -467,17 +467,18 @@ const formikPplTriggerToWire = (t, i = 0) => {
     return `${n}${unitCode(unit)}`;
   };
 
+  const normalizeDuration = (raw) => {
+    if (!raw) return null;
+    if (typeof raw === 'string') return raw.trim();
+    if (typeof raw === 'object') return packDur(raw.value, raw.unit);
+    return null;
+  };
+
   const type = (t?.uiConditionType || t?.type || t?.conditionType || 'number_of_results').toLowerCase();
   const isNum = type === 'number_of_results';
 
-  const suppress =
-    t?.suppress ??
-    (t?.suppressEnabled ? packDur(t?.suppress?.value, t?.suppress?.unit) : null);
-
-  const expires =
-    t?.expires ??
-    (t?.expires?.value ? packDur(t?.expires?.value, t?.expires?.unit) : null) ??
-    '7d';
+  const suppress = normalizeDuration(t?.suppress);
+  const expires = normalizeDuration(t?.expires) || '7d';
 
   return {
     name: t?.name || `trigger${i + 1}`,

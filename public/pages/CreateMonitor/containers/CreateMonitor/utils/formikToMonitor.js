@@ -94,6 +94,26 @@ function buildPplTriggerFromFormik(tDef, idx = 0) {
   const customCond = base.custom_condition ?? base.customCondition ?? null;
   const actions = base.actions || [];
 
+  const unitCode = (u) => {
+    const v = String(u || '').toLowerCase();
+    if (v.startsWith('second')) return 's';
+    if (v.startsWith('minute')) return 'm';
+    if (v.startsWith('hour')) return 'h';
+    if (v.startsWith('day')) return 'd';
+    return 'h';
+  };
+  const packDur = (val, unit) => {
+    const n = Number(val);
+    if (!Number.isFinite(n) || n <= 0) return null;
+    return `${n}${unitCode(unit)}`;
+  };
+  const normalizeDuration = (raw) => {
+    if (!raw) return null;
+    if (typeof raw === 'string') return raw.trim();
+    if (typeof raw === 'object') return packDur(raw.value, raw.unit);
+    return null;
+  };
+
   return {
     name,
     severity, 
@@ -103,8 +123,8 @@ function buildPplTriggerFromFormik(tDef, idx = 0) {
     num_results_condition: type === 'number_of_results' ? numCond : null,
     num_results_value: type === 'number_of_results' ? Number(numVal) : null,
     custom_condition: type === 'custom' ? (customCond || 'false') : null,
-    suppress: base.suppress ?? null, 
-    expires: base.expires || '7d',
+    suppress: normalizeDuration(base.suppress),
+    expires: normalizeDuration(base.expires) || '7d',
     last_triggered_time: null,
   };
 }
