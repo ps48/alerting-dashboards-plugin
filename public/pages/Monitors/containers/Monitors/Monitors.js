@@ -163,7 +163,42 @@ export default class Monitors extends Component {
       };
       const response = await httpClient.get('../api/alerting/monitors', { query: extendedParams });
       if (response.ok) {
-        const { monitors, totalMonitors } = response;
+        let monitors = [];
+        let totalMonitors = 0;
+
+        if (response.hits && Array.isArray(response.hits.hits)) {
+          const hits = response.hits.hits;
+          const now = Date.now();
+          monitors = hits.map((h) => {
+            const srcMon = h?._source?.monitor || h?._source || {};
+            const name = srcMon.name || h._id || '';
+            const enabled = Boolean(srcMon.enabled);
+            return {
+              id: h._id,
+              name,
+              enabled,
+              monitor: srcMon,
+              ifSeqNo: h._seq_no,
+              ifPrimaryTerm: h._primary_term,
+              item_type:
+                srcMon.workflow_type ||
+                srcMon.monitor_type ||
+                MONITOR_TYPE.QUERY_LEVEL,
+              associatedCompositeMonitorCnt: 0,
+              currentTime: now,
+            };
+          });
+          totalMonitors = Number(response.hits?.total?.value ?? monitors.length) || 0;
+        } else if (Array.isArray(response.monitors)) {
+          monitors = response.monitors.map((m) => ({
+            ...m,
+            name: m?.monitor?.name ?? m.name,
+            enabled: typeof m?.monitor?.enabled === 'boolean' ? m.monitor.enabled : m.enabled,
+            currentTime: Date.now(),
+          }));
+          totalMonitors = Number(response.totalMonitors ?? monitors.length) || 0;
+        }
+
         this.setState({ monitors, totalMonitors });
       } else {
         if (dataSourceId !== undefined) {
