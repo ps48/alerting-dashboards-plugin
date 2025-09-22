@@ -375,12 +375,12 @@ export default function Message(
           style={{ paddingBottom: '10px', maxWidth: '100%' }}
         >
           <EuiFlexGroup direction="column">
-            <EuiFlexItem grow={false} style={{ marginBottom: '0px' }}>
+            {/* <EuiFlexItem grow={false} style={{ marginBottom: '0px' }}>
               <FormikCheckbox
                 name={`${fieldPath}actions.${index}.throttle_enabled`}
                 inputProps={{ label: 'Enable action throttling' }}
               />
-            </EuiFlexItem>
+            </EuiFlexItem> */}
             <EuiFlexGroup
               alignItems="center"
               style={{ margin: '0px', display: _.get(action, `throttle_enabled`) ? '' : 'none' }}

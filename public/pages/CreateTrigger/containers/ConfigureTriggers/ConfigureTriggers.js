@@ -455,7 +455,7 @@ class ConfigureTriggers extends React.Component {
 
     return hasTriggers
       ? triggerValues.triggerDefinitions.map((trigger, index) => {
-          const stableKey = trigger?.id || trigger?.name || `trigger-${index}`;
+          const stableKey = trigger?.id || `trigger-${index}`;
           const containerId = `configure-trigger__${stableKey}`;
           const sevLabel = trigger?.severity != null ? String(trigger.severity).toUpperCase() : '';
           return (
