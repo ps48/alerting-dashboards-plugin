@@ -171,8 +171,16 @@ export default class Monitors extends Component {
           const now = Date.now();
           monitors = hits.map((h) => {
             const srcMon = h?._source?.monitor || h?._source || {};
-            const name = srcMon.name || h._id || '';
-            const enabled = Boolean(srcMon.enabled);
+            const ppl = srcMon?.ppl_monitor || {};
+            const name =
+              (typeof ppl.name === 'string' && ppl.name) ||
+              (typeof srcMon.name === 'string' && srcMon.name) ||
+              h._id ||
+              '';
+            const enabled =
+              typeof ppl.enabled === 'boolean'
+                ? ppl.enabled
+                : Boolean(srcMon.enabled);
             return {
               id: h._id,
               name,
@@ -190,12 +198,33 @@ export default class Monitors extends Component {
           });
           totalMonitors = Number(response.hits?.total?.value ?? monitors.length) || 0;
         } else if (Array.isArray(response.monitors)) {
-          monitors = response.monitors.map((m) => ({
-            ...m,
-            name: m?.monitor?.name ?? m.name,
-            enabled: typeof m?.monitor?.enabled === 'boolean' ? m.monitor.enabled : m.enabled,
-            currentTime: Date.now(),
-          }));
+          const now = Date.now();
+          monitors = response.monitors.map((m) => {
+            const srcMon = m?.monitor || {};
+            const ppl = srcMon?.ppl_monitor || {};
+            const name =
+              (typeof ppl.name === 'string' && ppl.name) ||
+              (typeof m.name === 'string' && m.name) ||
+              m.id;
+            const enabled =
+              typeof ppl.enabled === 'boolean'
+                ? ppl.enabled
+                : Boolean(m.enabled);
+            return {
+              id: m.id,
+              name,
+              enabled,
+              monitor: srcMon,
+              ifSeqNo: m.ifSeqNo,
+              ifPrimaryTerm: m.ifPrimaryTerm,
+              item_type:
+                srcMon.monitor_type ||
+                m.item_type ||
+                MONITOR_TYPE.QUERY_LEVEL,
+              associatedCompositeMonitorCnt: m.associatedCompositeMonitorCnt || 0,
+              currentTime: now,
+            };
+          });
           totalMonitors = Number(response.totalMonitors ?? monitors.length) || 0;
         }
 
