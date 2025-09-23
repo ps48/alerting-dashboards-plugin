@@ -79,22 +79,106 @@ export default class CreateMonitor extends Component {
     const baseInitial = getInitialValues({ location, monitorToEdit, edit });
     const initialValues = {
       ...baseInitial,
-      monitor_mode: edit
-        ? (baseInitial.monitor_mode ||
-          (monitorToEdit?.ppl_monitor ||
-            monitorToEdit?.query_language === 'ppl'
-              ? 'ppl'
-              : 'legacy'))
-        : 'ppl', // <-- default for create flow
-      // keep the PPL look-back defaults unless helper already provided them
+      monitor_mode: 'ppl',
       useLookBackWindow: baseInitial.useLookBackWindow ?? true,
       lookBackAmount: baseInitial.lookBackAmount ?? 1,
-      lookBackUnit: baseInitial.lookBackUnit || 'hours', // seconds | minutes | hours | days
+      lookBackUnit: baseInitial.lookBackUnit || 'hours',
+    };
+
+    // Helpers to map v2 trigger fields -> Formik fields used by DefineTrigger
+    const parseDuration = (val) => {
+      // accepts "30m", "7d", "12h", "15min" (we'll be lenient)
+      if (!val || typeof val !== 'string') return { value: '', unit: 'minutes' };
+      const m = val.trim().match(/^(\d+)\s*([a-zA-Z]+)$/);
+      if (!m) return { value: '', unit: 'minutes' };
+      const amount = Number(m[1]);
+      const u = m[2].toLowerCase();
+      let unit = 'minutes';
+      if (u.startsWith('m')) unit = 'minutes';
+      else if (u.startsWith('h')) unit = 'hours';
+      else if (u.startsWith('d')) unit = 'days';
+      else if (u.startsWith('s')) unit = 'seconds'; // tolerated, even if UI hides seconds
+      return { value: Number.isFinite(amount) ? amount : '', unit };
+    };
+
+    const mapComparator = (sym) => {
+      // common names used by threshold UIs
+      switch (sym) {
+        case '>': return 'gt';
+        case '>=': return 'gte';
+        case '<': return 'lt';
+        case '<=': return 'lte';
+        case '==':
+        case '===': return 'eq';
+        case '!=':
+        case '!==': return 'ne';
+        default: return 'gte';
+      }
+    };
+
+    const pplTriggerToFormik = (t) => {
+      const { value: suppressValue, unit: suppressUnit } = parseDuration(t.suppress);
+      const { value: expirationValue, unit: expirationUnit } = parseDuration(t.expires || '7d');
+      const thresholdValue = t.num_results_value != null ? Number(t.num_results_value) : '';
+      const thresholdEnum = mapComparator(t.num_results_condition);
+      return {
+        // raw v2 fields preserved
+        ...t,
+        // fields expected by DefineTrigger/ConfigureTriggers
+        name: t.name,
+        severity: (t.severity || '').toString().toLowerCase(), // keep lower for data; UI uppercases
+        mode: t.mode,
+        type: t.type, // 'number_of_results' | 'custom'
+        thresholdValue,
+        thresholdEnum,     // 'gt' | 'gte' | 'lt' | 'lte' | 'eq' | 'ne'
+        custom_condition: t.custom_condition,
+        suppressEnabled: !!t.suppress,
+        suppress: t.suppress
+          ? { value: suppressValue, unit: suppressUnit, enabled: true }
+          : undefined,
+        expires: t.expires
+          ? { value: expirationValue, unit: expirationUnit }
+          : undefined,
+        queryLevelTrigger: {
+          expires: t.expires ?? '',
+          suppress: t.suppress ?? '',
+          thresholdValue,
+          thresholdEnum,
+          type: t.type,
+          mode: t.mode,
+          custom_condition: t.custom_condition,
+        },
+      };
+    };
+
+    const getExistingPplTriggers = (src) => {
+      const candidates = [
+        src?.ppl_monitor?.triggers,                        // normalized to .ppl_monitor
+        src?.monitor_v2?.ppl_monitor?.triggers,            // raw v2 doc shape
+        src?.monitor?.ppl_monitor?.triggers,               // sometimes wrapped in .monitor
+        src?.monitor?.monitor_v2?.ppl_monitor?.triggers,   // wrapped + v2
+        src?.triggers,                                     // normalized .triggers on the root
+      ];
+      for (const c of candidates) {
+        if (Array.isArray(c)) return c;
+      }
+      return [];
     };
 
     let triggerToEdit;
     if (edit && monitorToEdit) {
       triggerToEdit = triggerToFormik(_.get(monitorToEdit, 'triggers', []), monitorToEdit);
+    }
+
+    if (edit && monitorToEdit) {
+      const pplTriggers = getExistingPplTriggers(monitorToEdit);
+      if (Array.isArray(pplTriggers) && pplTriggers.length) {
+        initialValues.triggerDefinitions = pplTriggers.map((t) => ({
+          ...pplTriggerToFormik(t),
+          id: t.id,
+          actions: Array.isArray(t.actions) ? t.actions : [],
+        }));
+      }
     }
 
     this.state = {
@@ -261,6 +345,25 @@ export default class CreateMonitor extends Component {
 
   buildMonitorForTriggers = (values) => {
     if (values.monitor_mode === 'ppl') {
+      // Robustly get existing PPL triggers from any supported shape
+      const getExistingPplTriggers = (src) => {
+        const candidates = [
+          src?.ppl_monitor?.triggers,
+          src?.monitor_v2?.ppl_monitor?.triggers,
+          src?.monitor?.ppl_monitor?.triggers,
+          src?.monitor?.monitor_v2?.ppl_monitor?.triggers,
+          src?.triggers,
+        ];
+        for (const c of candidates) {
+          if (Array.isArray(c)) return c;
+        }
+        return [];
+      };
+      const existingTriggers =
+        this.props.edit && this.props.monitorToEdit
+          ? getExistingPplTriggers(this.props.monitorToEdit)
+          : [];
+
       return {
         name: values.name || '',
         type: 'monitor',
@@ -272,7 +375,8 @@ export default class CreateMonitor extends Component {
           search: { searchType: 'query' },
           triggers: {},
         },
-        triggers: [],
+        // Feed existing PPL triggers to ConfigureTriggers in edit flow
+        triggers: existingTriggers,
       };
     }
 

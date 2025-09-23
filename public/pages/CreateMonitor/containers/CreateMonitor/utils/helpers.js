@@ -454,16 +454,21 @@ const formikPplTriggerToWire = (t, i = 0) => {
 
   const unitCode = (u) => {
     const v = String(u || '').toLowerCase();
-    if (v.startsWith('second')) return 's';
     if (v.startsWith('minute')) return 'm';
     if (v.startsWith('hour')) return 'h';
     if (v.startsWith('day')) return 'd';
-    return 'h';
+    // default to minutes if unknown
+    return 'm';
   };
 
   const packDur = (val, unit) => {
-    const n = Number(val);
+    let n = Number(val);
     if (!Number.isFinite(n) || n <= 0) return null;
+    const u = String(unit || '').toLowerCase();
+    if (u.startsWith('second')) {
+      n = Math.max(1, Math.ceil(n / 60));
+      return `${n}m`;
+    }
     return `${n}${unitCode(unit)}`;
   };
 
@@ -478,7 +483,7 @@ const formikPplTriggerToWire = (t, i = 0) => {
   const isNum = type === 'number_of_results';
 
   const suppress = normalizeDuration(t?.suppress);
-  const expires = normalizeDuration(t?.expires) || '7d';
+  const expires = normalizeDuration(t?.expires ?? t?.queryLevelTrigger?.expires);
 
   return {
     name: t?.name || `trigger${i + 1}`,
@@ -490,7 +495,7 @@ const formikPplTriggerToWire = (t, i = 0) => {
     num_results_value: isNum ? Number(t?.num_results_value ?? t?.thresholdValue ?? 1) : null,
     custom_condition: !isNum ? (t?.custom_condition || t?.customCondition || null) : null,
     suppress,
-    expires,
+    ...(expires ? { expires } : {}),
     last_triggered_time: null,
   };
 };
@@ -529,7 +534,6 @@ export const buildPPLMonitorFromFormik = (values) => {
       schedule,
       ...(lookBack ? { look_back_window: lookBack } : {}), // <- apply for ALL schedule types
       triggers,
-      schema_version: 0,
       query_language: 'ppl',
       query: values.pplQuery || '',
     },

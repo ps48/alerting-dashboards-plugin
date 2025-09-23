@@ -690,7 +690,7 @@ class DefineTrigger extends Component {
           {suppressToggle}
           {suppressEnabled && (
             <>
-              <EuiSpacer size="s" />
+              {/* <EuiSpacer size="s" />
               <div style={{ paddingLeft: GRID_PAD, maxWidth: SUPPRESS_TEXT_MAX }}>
                 <FormikFieldText
                   name={`${fieldPath}suppress.fieldValue`}
@@ -699,7 +699,7 @@ class DefineTrigger extends Component {
                   inputProps={{ placeholder: 'field value', fullWidth: true }}
                 />
               </div>
-              <EuiSpacer size="s" />
+              <EuiSpacer size="s" /> */}
               <EuiFlexGroup gutterSize="s" style={{ paddingLeft: '10px' }} alignItems="flexEnd">
                 <EuiFlexItem grow={false} style={{ width: TIME_BOX_WIDTH }}>
                   <FormikFieldText
@@ -715,7 +715,6 @@ class DefineTrigger extends Component {
                     formRow
                     rowProps={{ hasEmptyLabelSpace: true, fullWidth: true }}
                     inputProps={{ options: [
-                      { value: 'seconds', text: 'second(s)' },
                       { value: 'minutes', text: 'minute(s)' },
                       { value: 'hours', text: 'hour(s)' },
                       { value: 'days', text: 'day(s)' },
@@ -743,7 +742,6 @@ class DefineTrigger extends Component {
                 formRow
                 rowProps={{ hasEmptyLabelSpace: true, fullWidth: true }}
                 inputProps={{ options: [
-                  { value: 'seconds', text: 'second(s)' },
                   { value: 'minutes', text: 'minute(s)' },
                   { value: 'hours', text: 'hour(s)' },
                   { value: 'days', text: 'day(s)' },

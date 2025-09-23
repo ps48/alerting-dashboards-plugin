@@ -371,8 +371,8 @@ export default function Message(
 
       {displayThrottlingSettings ? (
         <EuiCompressedFormRow
-          label={'Throttling'}
-          style={{ paddingBottom: '10px', maxWidth: '100%' }}
+          // label={'Throttling'}
+          // style={{ paddingBottom: '10px', maxWidth: '100%' }}
         >
           <EuiFlexGroup direction="column">
             {/* <EuiFlexItem grow={false} style={{ marginBottom: '0px' }}>

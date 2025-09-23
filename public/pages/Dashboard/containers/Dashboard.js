@@ -167,11 +167,41 @@ export default class Dashboard extends Component {
         ...(dataSourceId !== undefined && { dataSourceId }),
         ...params,
       };
-      httpClient.get('../api/alerting/v2/alerts', { query: extendedParams }).then((resp) => {
+      httpClient.get('../api/alerting/v2/monitors/alerts', { query: extendedParams }).then((resp) => {
         if (resp.ok) {
           const payload = resp.resp || resp;
-          const alerts = payload.alerts || [];
-          const totalAlerts = payload.totalAlerts ?? payload.total_alerts ?? alerts.length;
+          let alerts = [];
+          let totalAlertsAggregate = 0;
+
+          const addBundle = (bundle) => {
+            const list = Array.isArray(bundle?.alerts) ? bundle.alerts : [];
+            // ensure each alert carries monitor_id and a version we can key on
+            const withMonitor = list.map((a) => ({
+              ...a,
+              monitor_id: a.monitor_id ?? bundle.monitor_id,
+              version: a.version ?? bundle.version,
+            }));
+            alerts.push(...withMonitor);
+            totalAlertsAggregate += bundle.total_alerts ?? bundle.totalAlerts ?? list.length;
+          };
+
+          if (Array.isArray(payload?.alerts)) {
+            alerts = payload.alerts;
+            totalAlertsAggregate = payload.total_alerts ?? payload.totalAlerts ?? alerts.length;
+          } else if (Array.isArray(payload?.monitors)) {
+            payload.monitors.forEach(addBundle);
+            totalAlertsAggregate = payload.total_alerts ?? payload.totalAlerts ?? totalAlertsAggregate;
+          } else if (Array.isArray(payload)) {
+            payload.forEach(addBundle);
+          } else if (payload?.monitor_id && Array.isArray(payload?.alerts)) {
+            addBundle(payload);
+          } else {
+            // last-ditch fallback (legacy or unknown)
+            alerts = payload.alerts || [];
+            totalAlertsAggregate = payload.total_alerts ?? payload.totalAlerts ?? alerts.length;
+          }
+
+          const totalAlerts = totalAlertsAggregate || alerts.length;
           this.setState({ alerts, totalAlerts });
 
           if (!perAlertView) {
@@ -580,7 +610,10 @@ export default class Dashboard extends Component {
     };
 
     const getItemId = (item) => {
-      if (perAlertView) return isBucketMonitor ? item.id : `${item.id}-${item.version}`;
+      if (perAlertView) {
+        const v = item.version ?? item.monitorVersion ?? '';
+        return isBucketMonitor ? item.id : `${item.id}-${v}`;
+      }
       return `${item.triggerID}-${item.version}`;
     };
 
