@@ -163,49 +163,103 @@ export default class Dashboard extends Component {
       const queryParamsString = queryString.stringify(params);
       const { httpClient, history, notifications, perAlertView } = this.props;
       history.replace({ ...this.props.location, search: queryParamsString });
-      const extendedParams = {
-        ...(dataSourceId !== undefined && { dataSourceId }),
-        ...params,
-      };
-      httpClient.get('../api/alerting/v2/monitors/alerts', { query: extendedParams }).then((resp) => {
+      const serverQuery = {};
+      if (dataSourceId !== undefined) serverQuery.dataSourceId = dataSourceId;
+      if (Array.isArray(monitorIds) && monitorIds.length) serverQuery.monitorIds = monitorIds;
+
+      httpClient.get('../api/alerting/v2/monitors/alerts', { query: serverQuery }).then((resp) => {
         if (resp.ok) {
           const payload = resp.resp || resp;
-          let alerts = [];
-          let totalAlertsAggregate = 0;
+          let rawAlerts = [];
+          let totalFromServer;
 
-          const addBundle = (bundle) => {
-            const list = Array.isArray(bundle?.alerts) ? bundle.alerts : [];
-            // ensure each alert carries monitor_id and a version we can key on
-            const withMonitor = list.map((a) => ({
+          // 1) v2: { alertV2s: [...], totalAlertV2s: N }
+          if (Array.isArray(payload?.alertV2s)) {
+            rawAlerts = payload.alertV2s.map((a) => ({
               ...a,
-              monitor_id: a.monitor_id ?? bundle.monitor_id,
-              version: a.version ?? bundle.version,
+              monitor_id: a.monitor_id,
+              // v2 provides monitor_version; keep a stable "version" key for itemId
+              version: a.monitor_version ?? a.version,
+              monitorVersion: a.monitor_version,
+              // v2 may not include a state; default to ACTIVE so filters/selection work
+              state: a.state || 'ACTIVE',
             }));
-            alerts.push(...withMonitor);
-            totalAlertsAggregate += bundle.total_alerts ?? bundle.totalAlerts ?? list.length;
-          };
-
-          if (Array.isArray(payload?.alerts)) {
-            alerts = payload.alerts;
-            totalAlertsAggregate = payload.total_alerts ?? payload.totalAlerts ?? alerts.length;
-          } else if (Array.isArray(payload?.monitors)) {
-            payload.monitors.forEach(addBundle);
-            totalAlertsAggregate = payload.total_alerts ?? payload.totalAlerts ?? totalAlertsAggregate;
-          } else if (Array.isArray(payload)) {
-            payload.forEach(addBundle);
-          } else if (payload?.monitor_id && Array.isArray(payload?.alerts)) {
-            addBundle(payload);
+            totalFromServer = payload.totalAlertV2s ?? rawAlerts.length;
           } else {
-            // last-ditch fallback (legacy or unknown)
-            alerts = payload.alerts || [];
-            totalAlertsAggregate = payload.total_alerts ?? payload.totalAlerts ?? alerts.length;
+            // 2) Other shapes we’ve handled previously (monitors[], payload[], or {monitor_id, alerts})
+            const bundles = Array.isArray(payload?.monitors)
+              ? payload.monitors
+              : Array.isArray(payload)
+              ? payload
+              : payload?.monitor_id && Array.isArray(payload?.alerts)
+              ? [payload]
+              : Array.isArray(payload?.alerts)
+              ? [{ monitor_id: undefined, version: undefined, alerts: payload.alerts }]
+              : [];
+            rawAlerts = bundles.flatMap((b) =>
+              (b.alerts || []).map((a) => ({
+                ...a,
+                monitor_id: a.monitor_id ?? b.monitor_id,
+                version: a.version ?? b.version,
+              }))
+            );
+            totalFromServer =
+              payload.total_alerts ?? payload.totalAlerts ?? rawAlerts.length;
           }
 
-          const totalAlerts = totalAlertsAggregate || alerts.length;
-          this.setState({ alerts, totalAlerts });
+          // ---- Client-side filter/search/sort/paginate ----
+          const q = String(search || '').trim().toLowerCase();
+          const matchesSearch = (a) =>
+            !q || JSON.stringify(a).toLowerCase().includes(q);
+          const matchesSeverity =
+            !severityLevel || severityLevel === 'ALL'
+              ? () => true
+              : (a) =>
+                  String(a.severity).toLowerCase() === String(severityLevel).toLowerCase() ||
+                  Number(a.severity) === Number(severityLevel);
+          const matchesState =
+            !alertState || alertState === 'ALL'
+              ? () => true
+              : (a) => String(a.state).toLowerCase() === String(alertState).toLowerCase();
+
+          let filtered = rawAlerts.filter(
+            (a) => matchesSearch(a) && matchesSeverity(a) && matchesState(a)
+          );
+
+          const dir = sortDirection === 'asc' ? 1 : -1;
+          // If v2 data is used and UI asks for "start_time", prefer "triggered_time"
+          const sortFieldEffective =
+            Array.isArray(payload?.alertV2s) && sortField === 'start_time'
+              ? 'triggered_time'
+              : sortField;
+          const val = (obj) => _.get(obj, sortFieldEffective);
+          filtered = filtered.sort((a, b) => {
+            const av = val(a);
+            const bv = val(b);
+            if (av == null && bv == null) return 0;
+            if (av == null) return -dir;
+            if (bv == null) return dir;
+            if (typeof av === 'number' && typeof bv === 'number') return (av - bv) * dir;
+            // try date
+            const ad = Date.parse(av);
+            const bd = Date.parse(bv);
+            if (Number.isFinite(ad) && Number.isFinite(bd)) return (ad - bd) * dir;
+            return String(av).localeCompare(String(bv)) * dir;
+          });
+
+          const totalAlerts = totalFromServer ?? filtered.length;
+          const paged = filtered.slice(from, from + size);
+
+          this.setState({ alerts: perAlertView ? paged : filtered, totalAlerts });
 
           if (!perAlertView) {
-            const alertsByTriggers = groupAlertsByTrigger(alerts);
+            const alertsByTriggers = groupAlertsByTrigger(filtered).map((row) => {
+              const latest = _.maxBy(row.alerts || [], (a) =>
+                (a && (a.triggered_time ?? a.start_time)) || 0
+              );
+              const ts = latest?.triggered_time ?? latest?.start_time ?? null; // v2 first, fallback if needed
+              return { ...row, lastTriggeredTime: ts };
+            });
             this.setState(
               {
                 totalTriggers: alertsByTriggers.length,

@@ -139,7 +139,7 @@ export default function Message(
 ) {
   const [displayPreview, setDisplayPreview] = useState(false);
   const onDisplayPreviewChange = (e) => setDisplayPreview(e.target.checked);
-  const monitorType = _.get(context, 'ctx.monitor.monitor_type', MONITOR_TYPE.QUERY_LEVEL);
+  const monitorType = _.get(context, 'ctx.monitorV2.monitor_type', MONITOR_TYPE.QUERY_LEVEL);
   const editableActionExecutionPolicy =
     monitorType === MONITOR_TYPE.BUCKET_LEVEL || monitorType === MONITOR_TYPE.DOC_LEVEL;
 

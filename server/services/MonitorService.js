@@ -54,6 +54,17 @@ export default class MonitorService extends MDSEnabledClientService {
     }
   };
 
+  alertsForMonitorsV2 = async (context, req, res) => {
+    try {
+      const client = this.getClientBasedOnDataSource(context, req);
+      const resp = await client('alerting.alertsForMonitorsV2'); // maps to /_plugins/_alerting/v2/monitors/alerts
+      return res.ok({ body: { ok: true, resp } });
+    } catch (err) {
+      console.error('Alerting - MonitorService - alertsForMonitorsV2:', err);
+      return res.ok({ body: { ok: false, resp: err.message } });
+    }
+  };
+
   createPPLMonitor = async (context, req, res) => {
     try {
       const params = { body: req.body };

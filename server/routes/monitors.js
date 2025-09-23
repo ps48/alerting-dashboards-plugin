@@ -34,6 +34,14 @@ export default function (services, router, dataSourceEnabled) {
 
   router.get(
     {
+      path: '/api/alerting/v2/monitors/alerts',
+      validate: { query: createValidateQuerySchema(dataSourceEnabled) },
+    },
+    monitorService.alertsForMonitorsV2
+  );
+
+  router.get(
+    {
       path: '/api/alerting/monitors',
       validate: { query: createValidateQuerySchema(dataSourceEnabled, fieldValidations) },
     },

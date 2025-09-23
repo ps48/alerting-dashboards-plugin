@@ -8,7 +8,7 @@ import Message from '../components/Action/actions';
 
 export const DEFAULT_MESSAGE_SOURCE = {
   BUCKET_LEVEL_MONITOR: `
-  Monitor {{ctx.monitor.name}} just entered alert status. Please investigate the issue.
+  Monitor {{ctx.monitorV2.name}} just entered alert status. Please investigate the issue.
   - Trigger: {{ctx.trigger.name}}
   - Severity: {{ctx.trigger.severity}}
   - Period start: {{ctx.periodStart}} UTC
@@ -30,7 +30,7 @@ export const DEFAULT_MESSAGE_SOURCE = {
   {{/ctx.completedAlerts}}
   `.trim(),
   QUERY_LEVEL_MONITOR: `
-  Monitor {{ctx.monitor.name}} just entered alert status. Please investigate the issue.
+  Monitor {{ctx.monitorV2.name}} just entered alert status. Please investigate the issue.
   - Trigger: {{ctx.trigger.name}}
   - Severity: {{ctx.trigger.severity}}
   - Period start: {{ctx.periodStart}} UTC
