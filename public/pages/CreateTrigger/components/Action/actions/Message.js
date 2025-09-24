@@ -139,7 +139,7 @@ export default function Message(
 ) {
   const [displayPreview, setDisplayPreview] = useState(false);
   const onDisplayPreviewChange = (e) => setDisplayPreview(e.target.checked);
-  const monitorType = _.get(context, 'ctx.monitorV2.monitor_type', MONITOR_TYPE.QUERY_LEVEL);
+  const monitorType = _.get(context, 'ctx.monitor.monitor_type', MONITOR_TYPE.QUERY_LEVEL);
   const editableActionExecutionPolicy =
     monitorType === MONITOR_TYPE.BUCKET_LEVEL || monitorType === MONITOR_TYPE.DOC_LEVEL;
 
@@ -283,16 +283,16 @@ export default function Message(
 
       <EuiSpacer size="m" />
 
-      <EuiText>
+      {/* <EuiText>
         <h4>Action configuration</h4>
-      </EuiText>
+      </EuiText> */}
 
       <EuiSpacer size="m" />
 
       {editableActionExecutionPolicy ? (
         <EuiCompressedFormRow
-          label={<span style={{ color: '#343741' }}>Perform action</span>}
-          style={{ maxWidth: '100%' }}
+          // label={<span style={{ color: '#343741' }}>Perform action</span>}
+          // style={{ maxWidth: '100%' }}
         >
           <EuiFlexGroup direction={'column'} gutterSize={'xs'}>
             <EuiFlexItem>
@@ -364,8 +364,8 @@ export default function Message(
         </EuiCompressedFormRow>
       ) : (
         <div>
-          <OverviewStat header={'Perform action'} value={'Per monitor execution'} />
-          <EuiSpacer size={'s'} />
+          {/* <OverviewStat header={'Perform action'} value={'Per monitor execution'} />
+          <EuiSpacer size={'s'} /> */}
         </div>
       )}
 

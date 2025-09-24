@@ -32,12 +32,15 @@ import { BehaviorSubject } from 'rxjs';
 import { dataSourceObservable } from './pages/utils/constants';
 import { ContentManagementPluginStart } from '../../../src/plugins/content_management/public';
 import { registerAlertsCard } from './utils/helpers';
+import type { ExplorePluginSetup } from '../../../src/plugins/explore/public';
 
 declare module '../../../src/plugins/ui_actions/public' {
   export interface ActionContextMapping {
     [ACTION_ALERTING]: {};
   }
 }
+
+let navigateToAppRef: CoreStart['application']['navigateToApp'] | null = null;
 
 export interface AlertingSetup { }
 
@@ -49,6 +52,7 @@ export interface AlertingSetupDeps {
   dataSourceManagement: DataSourceManagementPluginSetup;
   dataSource: DataSourcePluginSetup;
   assistantDashboards?: AssistantSetup;
+  explore: ExplorePluginSetup;
 }
 
 export interface AlertingStartDeps {
@@ -79,7 +83,7 @@ export class AlertingPlugin implements Plugin<void, AlertingStart, AlertingSetup
   private appStateUpdater = new BehaviorSubject<AppUpdater>(this.updateDefaultRouteOfManagementApplications);
 
 
-  public setup(core: CoreSetup<AlertingStartDeps, AlertingStart>, { expressions, uiActions, dataSourceManagement, dataSource, assistantDashboards }: AlertingSetupDeps) {
+  public setup(core: CoreSetup<AlertingStartDeps, AlertingStart>, { expressions, uiActions, dataSourceManagement, dataSource, assistantDashboards, explore }: AlertingSetupDeps) {
 
     const mountWrapper = async (params: AppMountParameters, redirect: string) => {
       const { renderApp } = await import("./app");
@@ -228,9 +232,34 @@ export class AlertingPlugin implements Plugin<void, AlertingStart, AlertingSetup
     const adAction = getAdAction();
     uiActions.registerTrigger(alertingTriggerAd);
     uiActions.addTriggerAction(alertingTriggerAd.id, adAction);
+
+    /**
+     * Register an action in Explore's Query Panel "Actions" menu
+     * that deep-links users into Alerting's create-monitor (PPL) flow.
+     */
+    if (explore?.queryPanelActionsRegistry) {
+      explore.queryPanelActionsRegistry.register({
+        id: 'alerting-create-monitor-from-explore',
+        order: 1,
+        getIsEnabled: (deps) => {
+          const status = (deps as any)?.resultStatus?.status;
+          return String(status).toLowerCase() === 'ready';
+        },
+        getLabel: () => 'Create monitor',
+        getIcon: () => 'bell',
+        onClick: (deps) => {
+          const q = (deps?.query as any)?.query ?? '';
+          // Route into the Alerting app's create monitor workflow (PPL),
+          // passing the current query so CreateMonitor can prefill it.
+          //core.application.navigateToApp(PLUGIN_NAME, { path: `/monitors/create?pplQuery=${encodeURIComponent(q)}` });
+          navigateToAppRef?.(MONITORS_NAV_ID, { path: '#/create-monitor' });
+        },
+      });
+    }
   }
 
   public start(core: CoreStart, { visAugmenter, embeddable, data, navigation, contentManagement, assistantDashboards }: AlertingStartDeps): AlertingStart {
+    navigateToAppRef = core.application.navigateToApp;
     setEmbeddable(embeddable);
     setOverlays(core.overlays);
     setQueryService(data.query);
