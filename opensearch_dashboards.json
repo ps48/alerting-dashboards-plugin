@@ -21,7 +21,8 @@
     "data",
     "visAugmenter",
     "opensearchDashboardsUtils",
-    "contentManagement"
+    "contentManagement", 
+    "explore"
   ],
   "server": true,
   "ui": true,
