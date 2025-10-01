@@ -61,8 +61,13 @@ import {
 import { isDataSourceChanged } from '../../../utils/helpers';
 import { PageHeader } from '../../../../components/PageHeader/PageHeader';
 import { monaco, loadMonaco } from '@osd/monaco';
+import { CoreContext } from '../../../../utils/CoreContext';
+//import { PplEditor } from './utils/PPLEditor';
+import { PplEditor } from '../../components/QueryEditor/PplEditor';
+
 
 class CreateMonitor extends Component {
+  static contextType = CoreContext;
   formikRef = React.createRef();
 
   static defaultProps = {
@@ -85,6 +90,21 @@ class CreateMonitor extends Component {
       lookBackAmount: baseInitial.lookBackAmount ?? 1,
       lookBackUnit: baseInitial.lookBackUnit || 'hours',
     };
+    try {
+      const params = new URLSearchParams(location?.search || '');
+      const incoming = params.get('ppl') || params.get('pplQuery');
+      if (incoming) {
+        initialValues.pplQuery = decodeURIComponent(incoming);
+        // optional: ensure we’re in PPL mode
+        initialValues.monitor_mode = 'ppl';
+        // optional: clean the URL so the value doesn’t re-apply on back/forward
+        if (props.history?.replace) {
+          props.history.replace({ ...location, search: '' });
+        }
+      }
+    } catch {
+      // noop — safe fallback if URL parsing fails
+    }
 
     // Helpers to map v2 trigger fields -> Formik fields used by DefineTrigger
     const parseDuration = (val) => {
@@ -195,13 +215,33 @@ class CreateMonitor extends Component {
       previewResult: null,
       queryLibOpen: false,
       previewOpen: false,
+      indices: [],
     };
-    // Monaco resources to dispose on unmount
-    this._monacoCompletionDisposable = null;
-    this._pplEditor = null;
-    this._onFocusDisposable = null;
-    this._monacoReady = Promise.resolve();
   }
+
+  // Fetch indices once for the current dataSourceId
+  fetchInitialIndices = async () => {
+    const { httpClient, landingDataSourceId } = this.props;
+
+    // Prefer the selected DS in the form if present, else landing
+    const dsId =
+      this.formikRef.current?.values?.dataSourceId || landingDataSourceId;
+
+    if (!dsId) {
+      this.setState({ indices: [] });
+      return;
+    }
+
+    try {
+      const resp = await httpClient.get('/api/alerting/indices', {
+        query: { dataSourceId: dsId }, // createValidateQuerySchema will read this
+      });
+      const indices = resp?.indices || [];
+      this.setState({ indices });
+    } catch (e) {
+      this.setState({ indices: [] });
+    }
+  };
 
   async componentDidMount() {
     const { httpClient } = this.props;
@@ -213,129 +253,8 @@ class CreateMonitor extends Component {
 
     updatePlugins();
     this.setSchedule();
-    // Register PPL language configuration (pairs, comments)
-    this._monacoReady = typeof loadMonaco === 'function' ? loadMonaco() : Promise.resolve();
-    await this._monacoReady;
-
-    // Register language + config after workers are ready
-    try {
-      monaco.languages.register({ id: 'ppl' });
-      monaco.languages.setLanguageConfiguration('ppl', {
-        autoClosingPairs: [
-          { open: '(', close: ')' }, { open: '[', close: ']' }, { open: '{', close: '}' },
-          { open: '"', close: '"' }, { open: "'", close: "'" }, { open: '`', close: '`' },
-        ],
-        comments: { lineComment: '//', blockComment: ['/*', '*/'] },
-        wordPattern: /@?\w[\w@'.-]*[?!,;:"]*/,
-      });
-    } catch {}
-
-    // Register a lightweight completion provider for PPL
-    // Uses data.autocomplete when available; otherwise returns no suggestions.
-    const triggerCharacters = [' ', '=', "'", '"', '`'];
-    this._monacoCompletionDisposable = monaco.languages.registerCompletionItemProvider('ppl', {
-      triggerCharacters,
-      provideCompletionItems: async (model, position, _context, token) => {
-        if (token?.isCancellationRequested) return { suggestions: [], incomplete: false };
-        const services = this.props.services; // from withOpenSearchDashboards()
-        const data = services?.data;
-        if (!data?.autocomplete) return { suggestions: [], incomplete: false };
-
-        try {
-          const querySvc = data.query?.queryString;
-          const queryObj = querySvc?.getQuery?.() || {};
-          const dataset = queryObj.dataset; // may be undefined outside Explore; that’s fine
-
-          // Prefer default data view if dataset is not available
-          let indexPattern = null;
-          try {
-            if (dataset?.id) {
-              indexPattern = await data.dataViews.get(
-                dataset.id,
-                dataset?.type !== (data?.DEFAULT_DATA?.SET_TYPES?.INDEX_PATTERN)
-              );
-            } else {
-              indexPattern = await data.dataViews.getDefault();
-            }
-          } catch (e) {
-            // ignore; we can still provide keyword suggestions
-          }
-
-          const selection = model.getOffsetAt(position);
-          const baseLanguage = 'PPL';
-          const effectiveLanguage = 'PPL';
-          const queryText = model.getValue();
-
-          const suggestions = await data.autocomplete.getQuerySuggestions({
-            query: queryText,
-            selectionStart: selection,
-            selectionEnd: selection,
-            language: effectiveLanguage,
-            baseLanguage,
-            indexPattern,
-            datasetType: dataset?.type,
-            position,
-            services,
-          });
-
-          const word = model.getWordUntilPosition(position);
-          const range = new monaco.Range(
-            position.lineNumber,
-            word.startColumn,
-            position.lineNumber,
-            word.endColumn
-          );
-          const items = (suggestions || [])
-            .filter((s) => s && typeof s.text === 'string')
-            .map((s) => ({
-              label: s.text,
-              kind: s.type || monaco.languages.CompletionItemKind.Text,
-              insertText: s.insertText ?? s.text,
-              insertTextRules: s.insertTextRules,
-              range,
-              detail: s.detail,
-              sortText: s.sortText,
-              documentation: s.documentation
-                ? { value: s.documentation, isTrusted: true }
-                : undefined,
-              command: { id: 'editor.action.triggerSuggest', title: 'Trigger Next Suggestion' },
-            }));
-          return { suggestions: items, incomplete: false };
-        } catch (e) {
-          return { suggestions: [], incomplete: false };
-        }
-      },
-    });
+    this.fetchInitialIndices();
   }
-
-  initPplEditor = async (el, initialText, setFieldValue) => {
-    if (!el || this._pplEditor) return;
-    await this._monacoReady;
-
-    this._pplEditor = monaco.editor.create(el, {
-      value: initialText || '',
-      language: 'ppl',
-      minimap: { enabled: false },
-      scrollBeyondLastLine: false,
-      wordWrap: 'off',
-      automaticLayout: true,
-      fontSize: 13,
-      lineNumbers: 'on',
-    });
-
-    // Wire changes back to Formik
-    this._pplEditor.onDidChangeModelContent(() => {
-      const text = this._pplEditor?.getValue() ?? '';
-      setFieldValue('pplQuery', text);
-    });
-
-    // Nudge suggestions to show on focus
-    this._onFocusDisposable = this._pplEditor.onDidFocusEditorWidget(() => {
-      try {
-        this._pplEditor?.trigger('keyboard', 'editor.action.triggerSuggest', {});
-      } catch (e) {}
-    });
-  };
 
   componentDidUpdate(prevProps) {
     if (isDataSourceChanged(prevProps, this.props)) {
@@ -354,19 +273,19 @@ class CreateMonitor extends Component {
     try {
       this.props.setFlyout(null);
     } catch (e) {}
-    if (this._onFocusDisposable) {
-      try { this._onFocusDisposable.dispose(); } catch (e) {}
-      this._onFocusDisposable = null;
-    }
-    if (this._pplEditor) {
-      try { this._pplEditor.dispose(); } catch (e) {}
-      this._pplEditor = null;
-    }
-    if (this._monacoCompletionDisposable) {
-      try { this._monacoCompletionDisposable.dispose(); } catch (e) {}
-      this._monacoCompletionDisposable = null;
-    }
-    this._pplEditor = null;
+    // if (this._onFocusDisposable) {
+    //   try { this._onFocusDisposable.dispose(); } catch (e) {}
+    //   this._onFocusDisposable = null;
+    // }
+    // if (this._pplEditor) {
+    //   try { this._pplEditor.dispose(); } catch (e) {}
+    //   this._pplEditor = null;
+    // }
+    // if (this._monacoCompletionDisposable) {
+    //   try { this._monacoCompletionDisposable.dispose(); } catch (e) {}
+    //   this._monacoCompletionDisposable = null;
+    // }
+    // this._pplEditor = null;
   }
 
   resetResponse() {
@@ -678,15 +597,12 @@ class CreateMonitor extends Component {
 
       {/* Monaco editor with autocomplete */}
       <div data-test-subj="pplEditorMonaco">
-        <div
-          ref={(el) =>
-            this.initPplEditor(
-              el,
-              values.pplQuery,
-              setFieldValue
-            )
-          }
-          style={{ width: '100%', height: 220, border: '1px solid #d3dae6', borderRadius: 6 }}
+        <PplEditor
+          value={values.pplQuery || ''}
+          onChange={(text) => setFieldValue('pplQuery', text)}
+          height={220}
+          indices={this.state.indices}
+          fields={['_source','@timestamp','user.id','http.status_code']}
         />
       </div>
 

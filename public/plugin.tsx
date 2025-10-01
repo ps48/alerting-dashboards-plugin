@@ -85,10 +85,15 @@ export class AlertingPlugin implements Plugin<void, AlertingStart, AlertingSetup
 
   public setup(core: CoreSetup<AlertingStartDeps, AlertingStart>, { expressions, uiActions, dataSourceManagement, dataSource, assistantDashboards, explore }: AlertingSetupDeps) {
 
+    // const mountWrapper = async (params: AppMountParameters, redirect: string) => {
+    //   const { renderApp } = await import("./app");
+    //   const [coreStart] = await core.getStartServices();
+    //   return renderApp(coreStart, params, redirect);
+    // };
     const mountWrapper = async (params: AppMountParameters, redirect: string) => {
       const { renderApp } = await import("./app");
-      const [coreStart] = await core.getStartServices();
-      return renderApp(coreStart, params, redirect);
+      const [coreStart, depsStart] = await core.getStartServices();
+      return renderApp(coreStart, depsStart, params, redirect);
     };
     core.application.register({
       id: PLUGIN_NAME,
@@ -100,10 +105,15 @@ export class AlertingPlugin implements Plugin<void, AlertingStart, AlertingSetup
         order: 2000,
       },
       order: 4000,
+      // mount: async (params) => {
+      //   const { renderApp } = await import('./app');
+      //   const [coreStart] = await core.getStartServices();
+      //   return renderApp(coreStart, params);
+      // },
       mount: async (params) => {
         const { renderApp } = await import('./app');
-        const [coreStart] = await core.getStartServices();
-        return renderApp(coreStart, params);
+        const [coreStart, depsStart] = await core.getStartServices();
+        return renderApp(coreStart, depsStart, params);
       },
     });
 
@@ -241,18 +251,15 @@ export class AlertingPlugin implements Plugin<void, AlertingStart, AlertingSetup
       explore.queryPanelActionsRegistry.register({
         id: 'alerting-create-monitor-from-explore',
         order: 1,
-        getIsEnabled: (deps) => {
-          const status = (deps as any)?.resultStatus?.status;
-          return String(status).toLowerCase() === 'ready';
-        },
+        getIsEnabled: () => true,
         getLabel: () => 'Create monitor',
         getIcon: () => 'bell',
         onClick: (deps) => {
           const q = (deps?.query as any)?.query ?? '';
-          // Route into the Alerting app's create monitor workflow (PPL),
-          // passing the current query so CreateMonitor can prefill it.
-          //core.application.navigateToApp(PLUGIN_NAME, { path: `/monitors/create?pplQuery=${encodeURIComponent(q)}` });
-          navigateToAppRef?.(MONITORS_NAV_ID, { path: '#/create-monitor' });
+          // Deep-link with the query as a hash query-param
+          navigateToAppRef?.(MONITORS_NAV_ID, {
+            path: `#/create-monitor?ppl=${encodeURIComponent(q)}`
+          });
         },
       });
     }

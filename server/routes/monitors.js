@@ -42,6 +42,18 @@ export default function (services, router, dataSourceEnabled) {
 
   router.get(
     {
+      path: '/api/alerting/indices',
+     validate: {
+       query:
+         createValidateQuerySchema(dataSourceEnabled, {}) ||
+         schema.object({}),   // <= important fallback
+     },
+    },
+    monitorService.listIndices
+  );
+
+  router.get(
+    {
       path: '/api/alerting/monitors',
       validate: { query: createValidateQuerySchema(dataSourceEnabled, fieldValidations) },
     },

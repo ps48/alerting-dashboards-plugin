@@ -42,6 +42,36 @@ export default class MonitorService extends MDSEnabledClientService {
   };
   /** ------------------------------------------------------------------------ */
 
+    listIndices = async (context, req, res) => {
+    try {
+      const client = this.getClientBasedOnDataSource(context, req);
+
+      // Ask only for the index column and JSON back
+      const path = '/_cat/indices?format=json&h=index';
+
+      const resp = await client('transport.request', {
+        method: 'GET',
+        path,
+        headers: DEFAULT_HEADERS,
+      });
+
+      // Handle both shapes: resp or { body: [...] }
+      const body = resp?.body ?? resp;           // support both client shapes
+      const rows = Array.isArray(body) ? body : [];
+      const names = rows.map(r => r.index).filter(Boolean);
+
+      // Dedupe + sort for stable UX
+      const indices = Array.from(new Set(names)).sort();
+
+      return res.ok({ body: { ok: true, indices } });
+    } catch (err) {
+      // Still return ok=false (UI will just have no suggestions)
+      // eslint-disable-next-line no-console
+      console.error('Alerting - MonitorService - listIndices:', err);
+      return res.ok({ body: { ok: false, indices: [], resp: err?.message } });
+    }
+  };
+  
   createMonitor = async (context, req, res) => {
     try {
       const params = { body: req.body };

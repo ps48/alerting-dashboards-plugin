@@ -124,6 +124,11 @@ export default function alertingPlugin(Client, config, components) {
     method: 'GET',
   });
 
+  alerting.listIndices = ca({
+    url: { fmt: `/api/alerting/indices` },
+    method: 'GET',
+  });
+
   // Legacy/other endpoints
   alerting.deleteMonitor = ca({
     url: {
