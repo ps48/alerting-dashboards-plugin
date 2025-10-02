@@ -33,6 +33,7 @@ import { dataSourceObservable } from './pages/utils/constants';
 import { ContentManagementPluginStart } from '../../../src/plugins/content_management/public';
 import { registerAlertsCard } from './utils/helpers';
 import type { ExplorePluginSetup } from '../../../src/plugins/explore/public';
+import { ResultStatus } from '../../../src/plugins/data/public'
 
 declare module '../../../src/plugins/ui_actions/public' {
   export interface ActionContextMapping {
@@ -247,22 +248,19 @@ export class AlertingPlugin implements Plugin<void, AlertingStart, AlertingSetup
      * Register an action in Explore's Query Panel "Actions" menu
      * that deep-links users into Alerting's create-monitor (PPL) flow.
      */
-    if (explore?.queryPanelActionsRegistry) {
-      explore.queryPanelActionsRegistry.register({
-        id: 'alerting-create-monitor-from-explore',
-        order: 1,
-        getIsEnabled: () => true,
-        getLabel: () => 'Create monitor',
-        getIcon: () => 'bell',
-        onClick: (deps) => {
-          const q = (deps?.query as any)?.query ?? '';
-          // Deep-link with the query as a hash query-param
-          navigateToAppRef?.(MONITORS_NAV_ID, {
-            path: `#/create-monitor?ppl=${encodeURIComponent(q)}`
-          });
-        },
-      });
-    }
+    explore.queryPanelActionsRegistry.register({
+      id: 'alerting-create-monitor-from-explore',
+      order: 1,
+      getIsEnabled: (deps) => deps.resultStatus.status === ResultStatus.READY,
+      getLabel: () => 'Create monitor',
+      getIcon: () => 'bell',
+      onClick: (deps) => {
+        const q = deps.query?.query ?? '';
+        navigateToAppRef?.(MONITORS_NAV_ID, {
+          path: `#/create-monitor?ppl=${encodeURIComponent(q)}`
+        });
+      },
+    });
   }
 
   public start(core: CoreStart, { visAugmenter, embeddable, data, navigation, contentManagement, assistantDashboards }: AlertingStartDeps): AlertingStart {
