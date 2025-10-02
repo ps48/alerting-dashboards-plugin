@@ -37,8 +37,9 @@ import {
   EuiCheckbox,
   EuiToolTip,
   EuiSwitch,
-  EuiConfirmModal, 
-  EuiOverlayMask
+  EuiFlyout,
+  EuiFlyoutHeader,
+  EuiFlyoutBody
 } from '@elastic/eui';
 
 import DefineMonitor from '../DefineMonitor';
@@ -67,7 +68,11 @@ import { monaco, loadMonaco } from '@osd/monaco';
 import { CoreContext } from '../../../../utils/CoreContext';
 import { PplEditor } from '../../components/QueryEditor/PplEditor';
 import { PplPreviewTable, pplRespToDocs } from '../../components/PplPreviewTable/PplPreviewTable';
-import { SavedQueryManagementComponent } from '../../../../../../../src/plugins/data/public';
+import {
+  SavedQueryManagementComponent,
+  SaveQueryFlyout,
+  OpenSavedQueryFlyout,
+} from '../../../../../../../src/plugins/data/public';
 
 
 class CreateMonitor extends Component {
@@ -225,8 +230,10 @@ class CreateMonitor extends Component {
       queryLibOpen: false,
       previewOpen: false,
       savedQMenuOpen: false,
-      showSavedQueryManager: false,   
       savingInline: false, 
+      showSaveQueryFlyout: false,
+      showOpenQueryFlyout: false,
+      showSavedQueryManager: false,
       indices: [],
     };
   }
@@ -257,11 +264,28 @@ class CreateMonitor extends Component {
 
   getSavedQueryService = () => {
     try {
-      return this.context?.services?.data?.query?.savedQueries;
+      console.log('context unchanged:', this.context);
+
+      const services =
+        (this.context && (this.context.services || this.context)) || undefined;
+      console.log('context.services:', services);
+
+      const data = services?.data;
+      console.log('services.data:', data);
+
+      const query = data?.query;
+      console.log('services.data.query:', query);
+
+      const savedQueries = query?.savedQueries;
+      console.log('services.data.query.savedQueries:', savedQueries);
+
+      return savedQueries;
     } catch (e) {
+      console.error('getSavedQueryService() error:', e);
       return undefined;
     }
   };
+
 
   getNotifications = () => {
     return this.context?.services?.notifications || this.props.notifications;
@@ -305,11 +329,19 @@ class CreateMonitor extends Component {
     } else if (q != null) {
       this.formikRef.current?.setFieldValue('pplQuery', JSON.stringify(q, null, 2));
     }
-    this.setState({ showSavedQueryManager: false });
+    this.setState({
+      showSavedQueryManager: false,
+      showSaveQueryFlyout: false,
+      showOpenQueryFlyout: false,
+    });
   };
 
   handleClearSavedQuery = () => {
-    this.setState({ showSavedQueryManager: false });
+    this.setState({
+      showSavedQueryManager: false,
+      showSaveQueryFlyout: false,
+      showOpenQueryFlyout: false,
+    });
   };
 
   async componentDidMount() {
@@ -589,68 +621,74 @@ class CreateMonitor extends Component {
               {/* Saved queries: dropdown with Save / Open, plus the manager UI */}
               <EuiPopover
                 isOpen={this.state.savedQMenuOpen}
-                closePopover={() => this.setState({ savedQMenuOpen: false })}
-                panelPaddingSize="s"
+                closePopover={() =>
+                  this.setState({
+                    savedQMenuOpen: false,
+                    showSavedQueryManager: false,
+                    showSaveQueryFlyout: false,
+                    showOpenQueryFlyout: false,
+                  })
+                }
+                anchorPosition="downLeft"
+                panelPaddingSize="none"
                 button={
                   <EuiButtonEmpty
                     size="s"
-                    onClick={() => this.setState((s) => ({ savedQMenuOpen: !s.savedQMenuOpen }))}
-                    iconType="arrowDown"
-                    iconSide="right"
+                    iconType={this.state.savedQMenuOpen ? 'arrowUp' : 'arrowDown'}
+                    iconSide="right"                    
+                    onClick={() =>
+                      this.setState((s) => ({
+                        savedQMenuOpen: !s.savedQMenuOpen,
+                        // when opening, mount the inline manager
+                        showSavedQueryManager: !s.savedQMenuOpen ? true : s.showSavedQueryManager,
+                        // default to inline manager (no forced flyout)
+                        showSaveQueryFlyout: false,
+                        showOpenQueryFlyout: false,
+                      }))
+                    }
                     data-test-subj="savedQueriesButton"
                   >
                     Saved queries
                   </EuiButtonEmpty>
                 }
               >
-                <EuiContextMenuPanel
-                  items={[
-                    <EuiContextMenuItem
-                      key="save"
-                      data-test-subj="savedQueriesSaveItem"
-                      onClick={() => {
-                        // open the manager in "save" mode
-                        this.setState({ showSavedQueryManager: true, savedQMenuOpen: false });
-                      }}
-                    >
-                      Save query
-                    </EuiContextMenuItem>,
-                    <EuiContextMenuItem
-                      key="open"
-                      data-test-subj="savedQueriesOpenItem"
-                      onClick={() => {
-                        // open the manager in "open" mode (same component; user picks one)
-                        this.setState({ showSavedQueryManager: true, savedQMenuOpen: false });
-                      }}
-                    >
-                      Open query
-                    </EuiContextMenuItem>,
-                  ]}
-                />
-              </EuiPopover>
-
-              {/* Manager UI (same component handles saving and opening) */}
-              {this.state.showSavedQueryManager && (
-                <EuiOverlayMask>
-                  <div style={{ zIndex: 10000 }}>
+                {/* Inline manager as dropdown content */}
+                {this.state.showSavedQueryManager && (
+                  <div
+                    style={{
+                      width: 150,
+                      maxWidth: '60vw',
+                      padding: 1,
+                      maxHeight: 200,
+                      overflow: 'auto',
+                    }}
+                    className="eui-yScroll"
+                  >
                     <SavedQueryManagementComponent
-                      // services
                       savedQueryService={this.getSavedQueryService()}
-                      // loading a saved query -> writes into the editor
                       onLoad={this.handleLoadSavedQuery}
-                      // clearing (no-op for this screen)
                       onClearSavedQuery={this.handleClearSavedQuery}
-                      // “Save” actions
-                      onInitiateSave={() => {}}
-                      onInitiateSaveAsNew={() => {}}
-                      showSaveQuery={true}
+                      // If you need to force a specific flyout, toggle these in state;
+                      // leaving undefined shows the inline actions by default.
+                      showSaveQuery={
+                        typeof this.state.showSaveQueryFlyout === 'boolean'
+                          ? this.state.showSaveQueryFlyout
+                          : undefined
+                      }
                       saveQuery={this.handleSaveQuery}
                       useNewSavedQueryUI={true}
-                      closeMenuPopover={() => this.setState({ showSavedQueryManager: false })}
+                      closeMenuPopover={() =>
+                        this.setState({
+                          savedQMenuOpen: false,
+                          showSavedQueryManager: false,
+                          showSaveQueryFlyout: false,
+                          showOpenQueryFlyout: false,
+                        })
+                      }
                     />
                   </div>
-                </EuiOverlayMask>
-              )}
+                )}
+              </EuiPopover>
             </EuiFlexItem>
           </EuiFlexGroup>
         </EuiFlexItem>
