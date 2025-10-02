@@ -36,6 +36,9 @@ import {
   EuiBadge,
   EuiCheckbox,
   EuiToolTip,
+  EuiSwitch,
+  EuiConfirmModal, 
+  EuiOverlayMask
 } from '@elastic/eui';
 
 import DefineMonitor from '../DefineMonitor';
@@ -62,8 +65,9 @@ import { isDataSourceChanged } from '../../../utils/helpers';
 import { PageHeader } from '../../../../components/PageHeader/PageHeader';
 import { monaco, loadMonaco } from '@osd/monaco';
 import { CoreContext } from '../../../../utils/CoreContext';
-//import { PplEditor } from './utils/PPLEditor';
 import { PplEditor } from '../../components/QueryEditor/PplEditor';
+import { PplPreviewTable, pplRespToDocs } from '../../components/PplPreviewTable/PplPreviewTable';
+import { SavedQueryManagementComponent } from '../../../../../../../src/plugins/data/public';
 
 
 class CreateMonitor extends Component {
@@ -92,9 +96,11 @@ class CreateMonitor extends Component {
     };
     try {
       const params = new URLSearchParams(location?.search || '');
+      console.log('[CreateMonitor] initial pplQuery:', initialValues.pplQuery);
       const incoming = params.get('ppl') || params.get('pplQuery');
       if (incoming) {
         initialValues.pplQuery = decodeURIComponent(incoming);
+        console.log('[CreateMonitor] pplQuery inc:', incoming);
         // optional: ensure we’re in PPL mode
         initialValues.monitor_mode = 'ppl';
         // optional: clean the URL so the value doesn’t re-apply on back/forward
@@ -213,8 +219,14 @@ class CreateMonitor extends Component {
       previewLoading: false,
       previewError: null,
       previewResult: null,
+      previewDocs: [],
+      previewQuery: '',
+      showRaw: false,
       queryLibOpen: false,
       previewOpen: false,
+      savedQMenuOpen: false,
+      showSavedQueryManager: false,   
+      savingInline: false, 
       indices: [],
     };
   }
@@ -241,6 +253,63 @@ class CreateMonitor extends Component {
     } catch (e) {
       this.setState({ indices: [] });
     }
+  };
+
+  getSavedQueryService = () => {
+    try {
+      return this.context?.services?.data?.query?.savedQueries;
+    } catch (e) {
+      return undefined;
+    }
+  };
+
+  getNotifications = () => {
+    return this.context?.services?.notifications || this.props.notifications;
+  };
+
+  handleSaveQuery = async (meta, saveAsNew = false) => {
+    const svc = this.getSavedQueryService();
+    const toasts = this.getNotifications()?.toasts;
+    if (!svc) {
+      toasts?.addWarning('Saved query service is not available.');
+      return;
+    }
+    const pplQuery = this.formikRef.current?.values?.pplQuery || '';
+    const attributes = {
+      title: meta.title,
+      description: meta.description,
+      query: {
+        query: pplQuery,
+        language: 'ppl',
+      },
+    };
+
+    try {
+      this.setState({ savingInline: true });
+      await svc.saveQuery(attributes, { overwrite: !saveAsNew });
+      toasts?.addSuccess(`Your query "${attributes.title}" was saved`);
+      this.setState({ savingInline: false, showSavedQueryManager: false });
+    } catch (err) {
+      this.setState({ savingInline: false });
+      toasts?.addDanger(
+        (err && err.message) ? `Failed to save query: ${err.message}` : 'Failed to save query.'
+      );
+      throw err;
+    }
+  };
+
+  handleLoadSavedQuery = (savedQuery) => {
+    const q = savedQuery?.attributes?.query?.query;
+    if (typeof q === 'string') {
+      this.formikRef.current?.setFieldValue('pplQuery', q);
+    } else if (q != null) {
+      this.formikRef.current?.setFieldValue('pplQuery', JSON.stringify(q, null, 2));
+    }
+    this.setState({ showSavedQueryManager: false });
+  };
+
+  handleClearSavedQuery = () => {
+    this.setState({ showSavedQueryManager: false });
   };
 
   async componentDidMount() {
@@ -517,33 +586,71 @@ class CreateMonitor extends Component {
             </EuiFlexItem>
 
             <EuiFlexItem grow={false}>
+              {/* Saved queries: dropdown with Save / Open, plus the manager UI */}
               <EuiPopover
-                isOpen={this.state.queryLibOpen}
-                closePopover={() => this.setState({ queryLibOpen: false })}
+                isOpen={this.state.savedQMenuOpen}
+                closePopover={() => this.setState({ savedQMenuOpen: false })}
                 panelPaddingSize="s"
                 button={
                   <EuiButtonEmpty
                     size="s"
-                    onClick={() => this.setState((s) => ({ queryLibOpen: !s.queryLibOpen }))}
+                    onClick={() => this.setState((s) => ({ savedQMenuOpen: !s.savedQMenuOpen }))}
                     iconType="arrowDown"
                     iconSide="right"
-                    data-test-subj="queryLibraryButton"
+                    data-test-subj="savedQueriesButton"
                   >
-                    Query library
+                    Saved queries
                   </EuiButtonEmpty>
                 }
               >
                 <EuiContextMenuPanel
                   items={[
-                    <EuiContextMenuItem key="saved" onClick={() => this.setState({ queryLibOpen: false })}>
-                      Saved queries
+                    <EuiContextMenuItem
+                      key="save"
+                      data-test-subj="savedQueriesSaveItem"
+                      onClick={() => {
+                        // open the manager in "save" mode
+                        this.setState({ showSavedQueryManager: true, savedQMenuOpen: false });
+                      }}
+                    >
+                      Save query
                     </EuiContextMenuItem>,
-                    <EuiContextMenuItem key="examples" onClick={() => this.setState({ queryLibOpen: false })}>
-                      Examples
+                    <EuiContextMenuItem
+                      key="open"
+                      data-test-subj="savedQueriesOpenItem"
+                      onClick={() => {
+                        // open the manager in "open" mode (same component; user picks one)
+                        this.setState({ showSavedQueryManager: true, savedQMenuOpen: false });
+                      }}
+                    >
+                      Open query
                     </EuiContextMenuItem>,
                   ]}
                 />
               </EuiPopover>
+
+              {/* Manager UI (same component handles saving and opening) */}
+              {this.state.showSavedQueryManager && (
+                <EuiOverlayMask>
+                  <div style={{ zIndex: 10000 }}>
+                    <SavedQueryManagementComponent
+                      // services
+                      savedQueryService={this.getSavedQueryService()}
+                      // loading a saved query -> writes into the editor
+                      onLoad={this.handleLoadSavedQuery}
+                      // clearing (no-op for this screen)
+                      onClearSavedQuery={this.handleClearSavedQuery}
+                      // “Save” actions
+                      onInitiateSave={() => {}}
+                      onInitiateSaveAsNew={() => {}}
+                      showSaveQuery={true}
+                      saveQuery={this.handleSaveQuery}
+                      useNewSavedQueryUI={true}
+                      closeMenuPopover={() => this.setState({ showSavedQueryManager: false })}
+                    />
+                  </div>
+                </EuiOverlayMask>
+              )}
             </EuiFlexItem>
           </EuiFlexGroup>
         </EuiFlexItem>
@@ -559,6 +666,8 @@ class CreateMonitor extends Component {
                     previewLoading: true,
                     previewError: null,
                     previewResult: null,
+                    previewDocs: [],
+                    previewQuery: '',
                     previewOpen: true,       
                   });
                   try {
@@ -566,7 +675,13 @@ class CreateMonitor extends Component {
                       queryText: values.pplQuery || '',
                       dataSourceId: values.dataSourceId || landingDataSourceId,
                     });
-                    this.setState({ previewResult: data, previewLoading: false, previewOpen: true });
+                    this.setState({
+                      previewResult: data,
+                      previewDocs: pplRespToDocs(data),
+                      previewQuery: values.pplQuery || '',
+                      previewLoading: false,
+                      previewOpen: true,
+                    });
                   } catch (e) {
                     this.setState({
                       previewError: e?.body?.message || e?.message || 'Preview failed',
@@ -594,7 +709,7 @@ class CreateMonitor extends Component {
       </EuiFlexGroup>
 
       <EuiSpacer size="s" />
-
+      
       {/* Monaco editor with autocomplete */}
       <div data-test-subj="pplEditorMonaco">
         <PplEditor
@@ -624,9 +739,38 @@ class CreateMonitor extends Component {
           ) : this.state.previewError ? (
             <EuiCodeBlock isCopyable>{this.state.previewError}</EuiCodeBlock>
           ) : (
-            <EuiCodeBlock language="json" isCopyable>
-              {JSON.stringify(this.state.previewResult, null, 2)}
-            </EuiCodeBlock>
+            <>
+              {/* Executed query */}
+              <EuiText size="s"><strong>Query</strong></EuiText>
+              <EuiCodeBlock fontSize="s" paddingSize="s" isCopyable>
+                {this.state.previewQuery || '(empty)'}
+              </EuiCodeBlock>
+
+              <EuiFlexGroup alignItems="center" justifyContent="spaceBetween" gutterSize="s">
+                <EuiFlexItem grow={false}>
+                  <EuiText size="s"><strong>Preview</strong></EuiText>
+                </EuiFlexItem>
+                <EuiFlexItem grow={false}>
+                  <EuiSwitch
+                    label="Raw JSON"
+                    checked={this.state.showRaw}
+                    onChange={(e) => this.setState({ showRaw: e.target.checked })}
+                    data-test-subj="pplPreviewRawToggle"
+                  />
+                </EuiFlexItem>
+              </EuiFlexGroup>
+
+              {this.state.showRaw ? (
+                <EuiCodeBlock language="json" isCopyable>
+                  {JSON.stringify(this.state.previewResult, null, 2)}
+                </EuiCodeBlock>
+              ) : (
+                <PplPreviewTable
+                  docs={this.state.previewDocs}
+                  isLoading={this.state.previewLoading}
+                />
+              )}
+            </>
           )}
         </EuiPanel>
       </EuiAccordion>
@@ -635,6 +779,7 @@ class CreateMonitor extends Component {
 
   // ---- PPL Schedule (unchanged) ----
   renderPplScheduleBody = (values, setFieldValue) => {
+    console.log("value query:", values.pplQuery);
     const useLB = values.useLookBackWindow ?? true;
     const lbAmount = Number(values.lookBackAmount ?? 1);
     const lbUnit = values.lookBackUnit || 'hours';
