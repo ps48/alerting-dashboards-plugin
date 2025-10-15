@@ -66,8 +66,8 @@ import { isDataSourceChanged } from '../../../utils/helpers';
 import { PageHeader } from '../../../../components/PageHeader/PageHeader';
 import { monaco, loadMonaco } from '@osd/monaco';
 import { CoreContext } from '../../../../utils/CoreContext';
-import { PplEditor } from '../../components/QueryEditor/PplEditor';
-import { PplPreviewTable, pplRespToDocs } from '../../components/PplPreviewTable/PplPreviewTable';
+import { QueryEditor } from '../../../../components/QueryEditor';
+import { AlertingDataTable } from '../../../../components/DataTable';
 import {
   SavedQueryManagementComponent,
   SaveQueryFlyout,
@@ -101,14 +101,12 @@ class CreateMonitor extends Component {
     };
     try {
       const params = new URLSearchParams(location?.search || '');
-      console.log('[CreateMonitor] initial pplQuery:', initialValues.pplQuery);
       const incoming = params.get('ppl') || params.get('pplQuery');
       if (incoming) {
         initialValues.pplQuery = decodeURIComponent(incoming);
-        console.log('[CreateMonitor] pplQuery inc:', incoming);
-        // optional: ensure we’re in PPL mode
+        // optional: ensure we're in PPL mode
         initialValues.monitor_mode = 'ppl';
-        // optional: clean the URL so the value doesn’t re-apply on back/forward
+        // optional: clean the URL so the value doesn't re-apply on back/forward
         if (props.history?.replace) {
           props.history.replace({ ...location, search: '' });
         }
@@ -224,7 +222,6 @@ class CreateMonitor extends Component {
       previewLoading: false,
       previewError: null,
       previewResult: null,
-      previewDocs: [],
       previewQuery: '',
       showRaw: false,
       queryLibOpen: false,
@@ -246,18 +243,28 @@ class CreateMonitor extends Component {
     const dsId =
       this.formikRef.current?.values?.dataSourceId || landingDataSourceId;
 
+    // If no dataSourceId, try to fetch indices anyway (for local cluster)
     if (!dsId) {
-      this.setState({ indices: [] });
-      return;
+      try {
+        const resp = await httpClient.get('/api/alerting/indices');
+        const indices = resp?.indices || [];
+        this.setState({ indices });
+        return;
+      } catch (e) {
+        console.error('[CreateMonitor] Error fetching indices (local):', e);
+        this.setState({ indices: [] });
+        return;
+      }
     }
 
     try {
       const resp = await httpClient.get('/api/alerting/indices', {
-        query: { dataSourceId: dsId }, // createValidateQuerySchema will read this
+        query: { dataSourceId: dsId },
       });
       const indices = resp?.indices || [];
       this.setState({ indices });
     } catch (e) {
+      console.error('[CreateMonitor] Error fetching indices:', e);
       this.setState({ indices: [] });
     }
   };
@@ -704,7 +711,6 @@ class CreateMonitor extends Component {
                     previewLoading: true,
                     previewError: null,
                     previewResult: null,
-                    previewDocs: [],
                     previewQuery: '',
                     previewOpen: true,       
                   });
@@ -715,7 +721,6 @@ class CreateMonitor extends Component {
                     });
                     this.setState({
                       previewResult: data,
-                      previewDocs: pplRespToDocs(data),
                       previewQuery: values.pplQuery || '',
                       previewLoading: false,
                       previewOpen: true,
@@ -748,14 +753,16 @@ class CreateMonitor extends Component {
 
       <EuiSpacer size="s" />
       
-      {/* Monaco editor with autocomplete */}
+      {/* Monaco editor with data plugin autocomplete */}
       <div data-test-subj="pplEditorMonaco">
-        <PplEditor
+        <QueryEditor
           value={values.pplQuery || ''}
-          onChange={(text) => setFieldValue('pplQuery', text)}
+          onChange={(text) => {
+            setFieldValue('pplQuery', text);
+          }}
+          services={this.context?.services || this.context}
           height={220}
           indices={this.state.indices}
-          fields={['_source','@timestamp','user.id','http.status_code']}
         />
       </div>
 
@@ -778,36 +785,11 @@ class CreateMonitor extends Component {
             <EuiCodeBlock isCopyable>{this.state.previewError}</EuiCodeBlock>
           ) : (
             <>
-              {/* Executed query */}
-              <EuiText size="s"><strong>Query</strong></EuiText>
-              <EuiCodeBlock fontSize="s" paddingSize="s" isCopyable>
-                {this.state.previewQuery || '(empty)'}
-              </EuiCodeBlock>
-
-              <EuiFlexGroup alignItems="center" justifyContent="spaceBetween" gutterSize="s">
-                <EuiFlexItem grow={false}>
-                  <EuiText size="s"><strong>Preview</strong></EuiText>
-                </EuiFlexItem>
-                <EuiFlexItem grow={false}>
-                  <EuiSwitch
-                    label="Raw JSON"
-                    checked={this.state.showRaw}
-                    onChange={(e) => this.setState({ showRaw: e.target.checked })}
-                    data-test-subj="pplPreviewRawToggle"
-                  />
-                </EuiFlexItem>
-              </EuiFlexGroup>
-
-              {this.state.showRaw ? (
-                <EuiCodeBlock language="json" isCopyable>
-                  {JSON.stringify(this.state.previewResult, null, 2)}
-                </EuiCodeBlock>
-              ) : (
-                <PplPreviewTable
-                  docs={this.state.previewDocs}
-                  isLoading={this.state.previewLoading}
-                />
-              )}
+              <AlertingDataTable
+                pplResponse={this.state.previewResult}
+                isLoading={this.state.previewLoading}
+                services={this.context?.services || this.context}
+              />
             </>
           )}
         </EuiPanel>
@@ -817,7 +799,6 @@ class CreateMonitor extends Component {
 
   // ---- PPL Schedule (unchanged) ----
   renderPplScheduleBody = (values, setFieldValue) => {
-    console.log("value query:", values.pplQuery);
     const useLB = values.useLookBackWindow ?? true;
     const lbAmount = Number(values.lookBackAmount ?? 1);
     const lbUnit = values.lookBackUnit || 'hours';
