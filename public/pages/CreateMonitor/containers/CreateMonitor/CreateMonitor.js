@@ -27,7 +27,6 @@ import {
   EuiFieldNumber,
   EuiHorizontalRule,
   EuiAccordion,
-  EuiSteps,
   EuiTextColor,
   EuiPopover,
   EuiContextMenuPanel,
@@ -753,8 +752,8 @@ class CreateMonitor extends Component {
 
       <EuiSpacer size="s" />
       
-      {/* Monaco editor with data plugin autocomplete */}
-      <div data-test-subj="pplEditorMonaco">
+      {/* Monaco editor with data plugin autocomplete - indented */}
+      <div data-test-subj="pplEditorMonaco" style={{ marginLeft: '16px' }}>
         <QueryEditor
           value={values.pplQuery || ''}
           onChange={(text) => {
@@ -775,6 +774,7 @@ class CreateMonitor extends Component {
           data-test-subj="pplPreviewAccordion"
           forceState={this.state.previewOpen ? 'open' : 'closed'}
           onToggle={(isOpen) => this.setState({ previewOpen: isOpen })}
+          style={{ marginLeft: '16px' }}
         >
         <EuiPanel hasBorder paddingSize="l" data-test-subj="pplResultsPanel">
           <EuiTitle size="s"><h2>Results</h2></EuiTitle>
@@ -919,22 +919,87 @@ class CreateMonitor extends Component {
   };
   // ---- END PPL schedule ----
 
-  renderStepPanel = ({ id, title, children, initialIsOpen = true }) => (
-    <EuiPanel hasBorder paddingSize="none">
-      <EuiAccordion
-        id={id}
-        initialIsOpen={initialIsOpen}
-        paddingSize="m"
-        arrowDisplay="left"
-        buttonContent={
-          <EuiTitle size="s">
-            <h2>{title}</h2>
-          </EuiTitle>
-        }
-      >
-        {children}
-      </EuiAccordion>
-    </EuiPanel>
+  renderStepPanel = ({ id, title, children, stepNumber, initialIsOpen = true, isLast = false }) => (
+    <div style={{ display: 'flex', marginBottom: '16px' }}>
+      {/* Step number and connecting line */}
+      <div style={{ 
+        display: 'flex', 
+        flexDirection: 'column', 
+        alignItems: 'center',
+        marginRight: '16px',
+        minWidth: '24px'
+      }}>
+        {/* Step number circle */}
+        <div style={{
+          width: '24px',
+          height: '24px',
+          borderRadius: '50%',
+          backgroundColor: '#0066CC',
+          color: 'white',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          fontSize: '12px',
+          fontWeight: 'bold',
+          flexShrink: 0
+        }}>
+          {stepNumber}
+        </div>
+        
+        {/* Connecting line - only show if not last step */}
+        {!isLast && (
+          <div style={{
+            width: '2px',
+            height: '40px',
+            backgroundColor: '#D3DAE6',
+            marginTop: '8px'
+          }} />
+        )}
+      </div>
+      
+      {/* Arrow column - dedicated space for minimize arrows */}
+      <div style={{ 
+        display: 'flex', 
+        flexDirection: 'column', 
+        alignItems: 'center',
+        marginRight: '8px',
+        minWidth: '16px',
+        paddingTop: '4px'
+      }}>
+        {/* Arrow placeholder - this will be filled by EuiAccordion's arrow */}
+        <div style={{ width: '16px', height: '16px' }} />
+      </div>
+      
+      {/* Card content */}
+      <div style={{ flex: 1 }}>
+        <EuiPanel hasBorder paddingSize="none">
+          <EuiAccordion
+            id={id}
+            initialIsOpen={initialIsOpen}
+            paddingSize="none"
+            arrowDisplay="left"
+            buttonContent={
+              <div style={{ padding: '4px 0px 4px 0px' }}>
+                <EuiTitle size="s">
+                  <h2 style={{ 
+                    margin: 0, 
+                    fontSize: '16px', 
+                    fontWeight: 'bold',
+                    lineHeight: '1.2'
+                  }}>
+                    {title}
+                  </h2>
+                </EuiTitle>
+              </div>
+            }
+          >
+            <div style={{ padding: '0 16px 16px 32px' }}>
+              {children}
+            </div>
+          </EuiAccordion>
+        </EuiPanel>
+      </div>
+    </div>
   );
 
   render() {
@@ -1011,80 +1076,73 @@ class CreateMonitor extends Component {
 
                 {values.monitor_mode === 'ppl' ? (
                   <div data-test-subj="pplBranch">
-                    <EuiSteps
-                      firstStepNumber={1}
-                      titleSize="xs"
-                      steps={[
-                        {
-                          title: ' ',
-                          children: this.renderStepPanel({
-                            id: 'pplStep1',
-                            title: 'Monitor details',
-                            children: this.renderPplDetailsBody(values, setFieldValue),
-                          }),
-                        },
-                        {
-                          title: ' ',
-                          children: this.renderStepPanel({
-                            id: 'pplStep2',
-                            title: 'Query',
-                            children: this.renderPplQueryBody(values, setFieldValue),
-                          }),
-                        },
-                        {
-                          title: ' ',
-                          children: this.renderStepPanel({
-                            id: 'pplStep3',
-                            title: 'Schedule',
-                            children: this.renderPplScheduleBody(values, setFieldValue),
-                          }),
-                        },
-                        {
-                          title: ' ',
-                          children: this.renderStepPanel({
-                            id: 'pplStep4',
-                            title: 'Triggers',
-                            children: (
-                              <>
-                                <FieldArray name="triggerDefinitions" validateOnChange>
-                                  {(triggerArrayHelpers) => (
-                                    <ConfigureTriggers
-                                      edit={edit}
-                                      triggerArrayHelpers={triggerArrayHelpers}
-                                      monitor={safeMonitor}
-                                      monitorValues={values}
-                                      touched={touched}
-                                      setFlyout={this.props.setFlyout}
-                                      triggers={safeTriggers}
-                                      triggerValues={values}
-                                      isDarkMode={this.props.isDarkMode}
-                                      httpClient={httpClient}
-                                      notifications={notifications}
-                                      notificationService={notificationService}
-                                      plugins={plugins}
-                                    />
-                                  )}
-                                </FieldArray>
+                    {this.renderStepPanel({
+                      id: 'pplStep1',
+                      title: 'Monitor details',
+                      stepNumber: 1,
+                      isLast: false,
+                      children: this.renderPplDetailsBody(values, setFieldValue),
+                    })}
+                    
+                    {this.renderStepPanel({
+                      id: 'pplStep2',
+                      title: 'Query',
+                      stepNumber: 2,
+                      isLast: false,
+                      children: this.renderPplQueryBody(values, setFieldValue),
+                    })}
+                    
+                    {this.renderStepPanel({
+                      id: 'pplStep3',
+                      title: 'Schedule',
+                      stepNumber: 3,
+                      isLast: false,
+                      children: this.renderPplScheduleBody(values, setFieldValue),
+                    })}
+                    
+                    {this.renderStepPanel({
+                      id: 'pplStep4',
+                      title: 'Triggers',
+                      stepNumber: 4,
+                      isLast: true,
+                      children: (
+                        <>
+                          <FieldArray name="triggerDefinitions" validateOnChange>
+                            {(triggerArrayHelpers) => (
+                              <ConfigureTriggers
+                                edit={edit}
+                                triggerArrayHelpers={triggerArrayHelpers}
+                                monitor={safeMonitor}
+                                monitorValues={values}
+                                touched={touched}
+                                setFlyout={this.props.setFlyout}
+                                triggers={safeTriggers}
+                                triggerValues={values}
+                                isDarkMode={this.props.isDarkMode}
+                                httpClient={httpClient}
+                                notifications={notifications}
+                                notificationService={notificationService}
+                                plugins={plugins}
+                              />
+                            )}
+                          </FieldArray>
 
-                                <EuiSpacer />
-                                <EuiFlexGroup alignItems="center" justifyContent="flexEnd">
-                                  <EuiFlexItem grow={false}>
-                                    <EuiSmallButtonEmpty onClick={this.onCancel}>
-                                      Cancel
-                                    </EuiSmallButtonEmpty>
-                                  </EuiFlexItem>
-                                  <EuiFlexItem grow={false}>
-                                    <EuiSmallButton fill onClick={handleSubmit} isLoading={isSubmitting}>
-                                      {edit ? 'Save' : 'Create'}
-                                    </EuiSmallButton>
-                                  </EuiFlexItem>
-                                </EuiFlexGroup>
-                              </>
-                            ),
-                          }),
-                        },
-                      ]}
-                    />
+                          <EuiSpacer />
+                          <EuiFlexGroup alignItems="center" justifyContent="flexEnd">
+                            <EuiFlexItem grow={false}>
+                              <EuiSmallButtonEmpty onClick={this.onCancel}>
+                                Cancel
+                              </EuiSmallButtonEmpty>
+                            </EuiFlexItem>
+                            <EuiFlexItem grow={false}>
+                              <EuiSmallButton fill onClick={handleSubmit} isLoading={isSubmitting}>
+                                {edit ? 'Save' : 'Create'}
+                              </EuiSmallButton>
+                            </EuiFlexItem>
+                          </EuiFlexGroup>
+                        </>
+                      ),
+                    })}
                   </div>
                 ) : (
                   <div data-test-subj="legacyBranch">

@@ -29,7 +29,7 @@ interface AlertingDataTableProps {
   services: any;
 }
 
-const PAGINATED_PAGE_SIZE = 50;
+const PAGINATED_PAGE_SIZE = 5;
 
 /**
  * Flatten nested objects recursively (like Discover does)

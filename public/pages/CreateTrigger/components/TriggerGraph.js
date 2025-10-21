@@ -8,7 +8,7 @@ import PropTypes from 'prop-types';
 import _ from 'lodash';
 import { EuiSpacer, EuiText, EuiRadioGroup } from '@elastic/eui';
 import { Field } from 'formik';
-import VisualGraph from '../../CreateMonitor/components/VisualGraph';
+import { AlertingVisualGraph } from '../../CreateMonitor/components/VisualGraph/AlertingVisualGraph';
 import TriggerExpressions from './TriggerExpressions';
 
 const TriggerGraph = ({
@@ -101,11 +101,11 @@ const TriggerGraph = ({
       )} */}
       <>
         {!hideThresholdControls && <EuiSpacer size="m" />}
-        <VisualGraph
-          annotation
+        <AlertingVisualGraph
           values={monitorValues}
           thresholdValue={thresholdValue}
           response={graphResponse}
+          services={{}}
         />
       </>
     </div>
