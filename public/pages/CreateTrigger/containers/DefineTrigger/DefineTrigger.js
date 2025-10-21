@@ -496,27 +496,27 @@ class DefineTrigger extends Component {
             validateTriggerName(triggerValues?.triggerDefinitions, triggerIndex, flyoutMode)(val),
         }}
         formRow
-        rowProps={{ ...defaultRowProps, ...(flyoutMode ? { style: {} } : {}), fullWidth: true, style: { paddingLeft: GRID_PAD, maxWidth: GRID_MAX } }}
+        rowProps={{ ...defaultRowProps, ...(flyoutMode ? { style: {} } : {}), fullWidth: true, style: { paddingLeft: GRID_PAD, maxWidth: GRID_MAX - 8 } }}
         inputProps={{ ...defaultInputProps, fullWidth: true }}
       />
     );
 
     const numberOfResultsHeader = isNumberOfResults ? (
       <>
-        <EuiFlexGroup {...twoColRowProps}>
-          <EuiFlexItem grow>
+        <EuiFlexGroup gutterSize="s" responsive={false} alignItems="flexEnd" style={{ paddingLeft: GRID_PAD, maxWidth: GRID_MAX }}>
+          <EuiFlexItem>
             <FormikSelect
               name={`${fieldPath}thresholdEnum`}
               formRow
-              rowProps={{ label: 'Trigger condition', fullWidth: true }}
+              rowProps={{ label: 'Trigger condition', fullWidth: true, style: { paddingLeft: 0 } }}
               inputProps={{ options: THRESHOLD_OPTIONS, fullWidth: true }}
             />
           </EuiFlexItem>
-          <EuiFlexItem grow>
+          <EuiFlexItem>
             <FormikFieldText
               name={`${fieldPath}thresholdValue`}
               formRow
-              rowProps={{ hasEmptyLabelSpace: true, fullWidth: true }}
+              rowProps={{ hasEmptyLabelSpace: true, fullWidth: true, style: { paddingLeft: 0 } }}
               inputProps={{ type: 'number', fullWidth: true }}
             />
           </EuiFlexItem>
@@ -531,8 +531,8 @@ class DefineTrigger extends Component {
 
     // Severity + Type
     const severityAndTypeRow = (
-      <EuiFlexGroup {...twoColRowProps} alignItems="flexEnd">
-        <EuiFlexItem grow style={HALF_COL}>
+      <EuiFlexGroup gutterSize="s" responsive={false} alignItems="flexEnd" style={{ paddingLeft: GRID_PAD, maxWidth: GRID_MAX }}>
+        <EuiFlexItem>
           <FormikSelect
             name={`${fieldPath}severity`}
             formRow
@@ -541,7 +541,7 @@ class DefineTrigger extends Component {
             inputProps={{ options: SEVERITY_OPTIONS, fullWidth: true }}
           />
         </EuiFlexItem>
-        <EuiFlexItem grow style={HALF_COL}>
+        <EuiFlexItem>
           <FormikSelect
             name={`${fieldPath}uiConditionType`}
             formRow
@@ -651,7 +651,7 @@ class DefineTrigger extends Component {
       </div>
     );
 
-    const TIME_BOX_WIDTH = 300;
+    const TIME_BOX_WIDTH = 350;
 
     return (
       <OuterAccordion
@@ -700,20 +700,20 @@ class DefineTrigger extends Component {
                 />
               </div>
               <EuiSpacer size="s" /> */}
-              <EuiFlexGroup gutterSize="s" style={{ paddingLeft: '10px' }} alignItems="flexEnd">
-                <EuiFlexItem grow={false} style={{ width: TIME_BOX_WIDTH }}>
+              <EuiFlexGroup gutterSize="s" style={{ paddingLeft: GRID_PAD, maxWidth: GRID_MAX }} alignItems="flexEnd">
+                <EuiFlexItem>
                   <FormikFieldText
                     name={`${fieldPath}suppress.value`}
                     formRow
-                    rowProps={{ label: 'Suppress for', fullWidth: true }}
+                    rowProps={{ label: 'Suppress for', fullWidth: true, style: { paddingLeft: 0 } }}
                     inputProps={{ type: 'number', min: 1, fullWidth: true }}
                   />
                 </EuiFlexItem>
-                <EuiFlexItem grow={false} style={{ width: TIME_BOX_WIDTH }}>
+                <EuiFlexItem>
                   <FormikSelect
                     name={`${fieldPath}suppress.unit`}
                     formRow
-                    rowProps={{ hasEmptyLabelSpace: true, fullWidth: true }}
+                    rowProps={{ hasEmptyLabelSpace: true, fullWidth: true, style: { paddingLeft: 0 } }}
                     inputProps={{ options: [
                       { value: 'minutes', text: 'minute(s)' },
                       { value: 'hours', text: 'hour(s)' },
@@ -727,20 +727,20 @@ class DefineTrigger extends Component {
 
           {/* Expires */}
           <EuiSpacer size="s" />
-          <EuiFlexGroup gutterSize="s" style={{ paddingLeft: '10px' }} alignItems="flexEnd">
-            <EuiFlexItem grow={false} style={{ width: TIME_BOX_WIDTH }}>
+          <EuiFlexGroup gutterSize="s" style={{ paddingLeft: GRID_PAD, maxWidth: GRID_MAX }} alignItems="flexEnd">
+            <EuiFlexItem>
               <FormikFieldText
                 name={`${fieldPath}expires.value`}
                 formRow
-                rowProps={{ label: 'Expires', fullWidth: true }}
+                rowProps={{ label: 'Expires', fullWidth: true, style: { paddingLeft: 0 } }}
                 inputProps={{ type: 'number', min: 1, fullWidth: true }}
               />
             </EuiFlexItem>
-            <EuiFlexItem grow={false} style={{ width: TIME_BOX_WIDTH }}>
+            <EuiFlexItem>
               <FormikSelect
                 name={`${fieldPath}expires.unit`}
                 formRow
-                rowProps={{ hasEmptyLabelSpace: true, fullWidth: true }}
+                rowProps={{ hasEmptyLabelSpace: true, fullWidth: true, style: { paddingLeft: 0 } }}
                 inputProps={{ options: [
                   { value: 'minutes', text: 'minute(s)' },
                   { value: 'hours', text: 'hour(s)' },

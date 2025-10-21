@@ -568,12 +568,13 @@ class CreateMonitor extends Component {
 
   renderPplDetailsBody = (values, setFieldValue) => (
     <>
-      <EuiFormRow label="Monitor name">
+      <EuiFormRow label="Monitor name" fullWidth style={{ marginLeft: '-6px', maxWidth: '720px' }}>
         <EuiFieldText
           data-test-subj="pplName"
           value={values.name}
           onChange={(e) => setFieldValue('name', e.target.value)}
           placeholder="Enter a monitor name"
+          fullWidth
         />
       </EuiFormRow>
 
@@ -586,12 +587,15 @@ class CreateMonitor extends Component {
             </EuiTextColor>
           </>
         }
+        fullWidth
+        style={{ marginLeft: '-6px', maxWidth: '720px' }}
       >
         <EuiTextArea
           data-test-subj="pplDescription"
           value={values.description || ''}
           onChange={(e) => setFieldValue('description', e.target.value)}
           placeholder="Describe the monitor"
+          fullWidth
         />
       </EuiFormRow>
 
@@ -819,9 +823,9 @@ class CreateMonitor extends Component {
         </EuiFormRow>
 
         {useLB && (
-          <EuiFormRow label="Look back from">
+          <EuiFormRow label="Look back from" fullWidth style={{ marginLeft: '-6px', maxWidth: '720px' }}>
             <EuiFlexGroup gutterSize="s" alignItems="center" responsive={false}>
-              <EuiFlexItem grow={false} style={{ width: 140 }}>
+              <EuiFlexItem>
                 <EuiFieldNumber
                   data-test-subj="pplLookBackAmount"
                   min={1}
@@ -829,10 +833,11 @@ class CreateMonitor extends Component {
                   onChange={(e) =>
                     setFieldValue('lookBackAmount', Math.max(1, Number(e.target.value) || 1))
                   }
+                  fullWidth
                 />
               </EuiFlexItem>
 
-              <EuiFlexItem grow={false} style={{ width: 220 }}>
+              <EuiFlexItem>
                 <EuiSelect
                   data-test-subj="pplLookBackUnit"
                   options={[
@@ -843,6 +848,7 @@ class CreateMonitor extends Component {
                   ]}
                   value={lbUnit}
                   onChange={(e) => setFieldValue('lookBackUnit', e.target.value)}
+                  fullWidth
                 />
               </EuiFlexItem>
             </EuiFlexGroup>
@@ -853,7 +859,7 @@ class CreateMonitor extends Component {
 
     return (
       <>
-        <EuiFormRow label="Frequency">
+        <EuiFormRow label="Frequency" fullWidth style={{ marginLeft: '-6px', maxWidth: '720px' }}>
           <EuiSelect
             data-test-subj="pplFrequency"
             options={[
@@ -865,22 +871,24 @@ class CreateMonitor extends Component {
             ]}
             value={values.frequency}
             onChange={(e) => setFieldValue('frequency', e.target.value)}
+            fullWidth
           />
         </EuiFormRow>
 
         {values.frequency === 'interval' && (
           <>
-            <EuiFormRow label="Run every">
+            <EuiFormRow label="Run every" fullWidth style={{ marginLeft: '-6px', maxWidth: '720px' }}>
               <EuiFlexGroup gutterSize="s" alignItems="center" responsive={false}>
-                <EuiFlexItem grow={false} style={{ width: 140 }}>
+                <EuiFlexItem>
                   <EuiFieldNumber
                     data-test-subj="pplIntervalValue"
                     min={1}
                     value={values.period?.interval ?? 1}
                     onChange={(e) => setFieldValue('period.interval', Number(e.target.value) || 1)}
+                    fullWidth
                   />
                 </EuiFlexItem>
-                <EuiFlexItem grow={false} style={{ width: 200 }}>
+                <EuiFlexItem>
                   <EuiSelect
                     data-test-subj="pplIntervalUnit"
                     options={[
@@ -890,6 +898,7 @@ class CreateMonitor extends Component {
                     ]}
                     value={values.period?.unit || 'MINUTES'}
                     onChange={(e) => setFieldValue('period.unit', e.target.value)}
+                    fullWidth
                   />
                 </EuiFlexItem>
               </EuiFlexGroup>
