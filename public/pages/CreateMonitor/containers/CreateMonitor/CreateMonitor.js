@@ -630,9 +630,9 @@ class CreateMonitor extends Component {
             <EuiFlexItem grow={false}>
               <EuiFlexGroup alignItems="center" gutterSize="xs" responsive={false}>
                 <EuiFlexItem grow={false}>
-                  <EuiBadge color="hollow" data-test-subj="pplBadge" style={{ borderRadius: 8, padding: '2px 10px', fontWeight: 700 }}>
+                  <EuiText>
                     PPL
-                  </EuiBadge>
+                  </EuiText>
                 </EuiFlexItem>
                 <EuiFlexItem grow={false}>
                   <EuiIconTip
