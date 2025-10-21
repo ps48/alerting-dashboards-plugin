@@ -19,6 +19,8 @@
   }
   
   .euiAccordion__children {
-    padding-left: 12px !important;
+    padding-left: 56px !important; // Indent content more to the right
+    padding-right: 16px !important;
+    padding-bottom: 16px !important;
   }
 }

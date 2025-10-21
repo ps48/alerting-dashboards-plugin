@@ -43,6 +43,7 @@ import {
 } from '@elastic/eui';
 
 import DefineMonitor from '../DefineMonitor';
+import CustomSteps from '../../components/CustomSteps';
 import { FORMIK_INITIAL_VALUES } from './utils/constants';
 import { formikToMonitor } from './utils/formikToMonitor';
 import { MONITOR_TYPE, SEARCH_TYPE } from '../../../../utils/constants';
@@ -613,19 +614,38 @@ class CreateMonitor extends Component {
     </>
   );
 
+  // ---- PPL Schedule (unchanged) ----
+
+
   renderPplQueryBody = (values, setFieldValue) => (
     <>
-      <EuiFlexGroup justifyContent="spaceBetween" alignItems="center" gutterSize="s" responsive={false}>
+      {/* Top row with PPL badge, Saved queries, Run preview, and info icon */}
+      <EuiFlexGroup alignItems="center" justifyContent="spaceBetween" gutterSize="s" responsive={false}>
         <EuiFlexItem grow={false}>
           <EuiFlexGroup alignItems="center" gutterSize="s" responsive={false}>
             <EuiFlexItem grow={false}>
-              <EuiBadge color="hollow" data-test-subj="pplBadge" style={{ borderRadius: 8, padding: '2px 10px', fontWeight: 700 }}>
-                PPL
-              </EuiBadge>
+              <EuiFlexGroup alignItems="center" gutterSize="xs" responsive={false}>
+                <EuiFlexItem grow={false}>
+                  <EuiBadge color="hollow" data-test-subj="pplBadge" style={{ borderRadius: 8, padding: '2px 10px', fontWeight: 700 }}>
+                    PPL
+                  </EuiBadge>
+                </EuiFlexItem>
+                <EuiFlexItem grow={false}>
+                  <EuiIconTip
+                    type="iInCircle"
+                    content="Write queries in PPL. Use Saved queries for saved or example queries."
+                    position="left"
+                    iconProps={{ style: { border: 'none', background: 'none' } }}
+                  />
+                </EuiFlexItem>
+              </EuiFlexGroup>
             </EuiFlexItem>
-
+            
             <EuiFlexItem grow={false}>
-              {/* Saved queries: dropdown with Save / Open, plus the manager UI */}
+              <div style={{ width: '1px', height: '16px', backgroundColor: '#d3dae6', margin: '0 8px' }} />
+            </EuiFlexItem>
+            
+            <EuiFlexItem grow={false}>
               <EuiPopover
                 isOpen={this.state.savedQMenuOpen}
                 closePopover={() =>
@@ -646,9 +666,7 @@ class CreateMonitor extends Component {
                     onClick={() =>
                       this.setState((s) => ({
                         savedQMenuOpen: !s.savedQMenuOpen,
-                        // when opening, mount the inline manager
                         showSavedQueryManager: !s.savedQMenuOpen ? true : s.showSavedQueryManager,
-                        // default to inline manager (no forced flyout)
                         showSaveQueryFlyout: false,
                         showOpenQueryFlyout: false,
                       }))
@@ -659,13 +677,12 @@ class CreateMonitor extends Component {
                   </EuiButtonEmpty>
                 }
               >
-                {/* Inline manager as dropdown content */}
                 {this.state.showSavedQueryManager && (
                   <div
                     style={{
-                      width: 150,
+                      width: 200,
                       maxWidth: '60vw',
-                      padding: 1,
+                      padding: 8,
                       maxHeight: 200,
                       overflow: 'auto',
                     }}
@@ -675,8 +692,6 @@ class CreateMonitor extends Component {
                       savedQueryService={this.getSavedQueryService()}
                       onLoad={this.handleLoadSavedQuery}
                       onClearSavedQuery={this.handleClearSavedQuery}
-                      // If you need to force a specific flyout, toggle these in state;
-                      // leaving undefined shows the inline actions by default.
                       showSaveQuery={
                         typeof this.state.showSaveQueryFlyout === 'boolean'
                           ? this.state.showSaveQueryFlyout
@@ -701,60 +716,48 @@ class CreateMonitor extends Component {
         </EuiFlexItem>
 
         <EuiFlexItem grow={false}>
-          <EuiFlexGroup alignItems="center" gutterSize="s" responsive={false}>
-            <EuiFlexItem grow={false}>
-              <EuiButton
-                size="s"
-                onClick={async () => {
-                  const { httpClient, landingDataSourceId } = this.props;
-                  this.setState({
-                    previewLoading: true,
-                    previewError: null,
-                    previewResult: null,
-                    previewQuery: '',
-                    previewOpen: true,       
-                  });
-                  try {
-                    const data = await runPPLPreview(httpClient, {
-                      queryText: values.pplQuery || '',
-                      dataSourceId: values.dataSourceId || landingDataSourceId,
-                    });
-                    this.setState({
-                      previewResult: data,
-                      previewQuery: values.pplQuery || '',
-                      previewLoading: false,
-                      previewOpen: true,
-                    });
-                  } catch (e) {
-                    this.setState({
-                      previewError: e?.body?.message || e?.message || 'Preview failed',
-                      previewLoading: false,
-                      previewOpen: true,
-                    });
-                  }
-                }}
-                isLoading={this.state.previewLoading}
-                data-test-subj="runPreview"
-              >
-                Run preview
-              </EuiButton>
-            </EuiFlexItem>
-
-            <EuiFlexItem grow={false}>
-              <EuiIconTip
-                type="iInCircle"
-                content="Write queries in PPL. Use Query library for saved or example queries."
-                position="left"
-              />
-            </EuiFlexItem>
-          </EuiFlexGroup>
+          <EuiButton
+            size="s"
+            onClick={async () => {
+              const { httpClient, landingDataSourceId } = this.props;
+              this.setState({
+                previewLoading: true,
+                previewError: null,
+                previewResult: null,
+                previewQuery: '',
+                previewOpen: true,       
+              });
+              try {
+                const data = await runPPLPreview(httpClient, {
+                  queryText: values.pplQuery || '',
+                  dataSourceId: values.dataSourceId || landingDataSourceId,
+                });
+                this.setState({
+                  previewResult: data,
+                  previewQuery: values.pplQuery || '',
+                  previewLoading: false,
+                  previewOpen: true,
+                });
+              } catch (e) {
+                this.setState({
+                  previewError: e?.body?.message || e?.message || 'Preview failed',
+                  previewLoading: false,
+                  previewOpen: true,
+                });
+              }
+            }}
+            isLoading={this.state.previewLoading}
+            data-test-subj="runPreview"
+          >
+            Run preview
+          </EuiButton>
         </EuiFlexItem>
       </EuiFlexGroup>
 
       <EuiSpacer size="s" />
       
-      {/* Monaco editor with data plugin autocomplete - indented */}
-      <div data-test-subj="pplEditorMonaco" style={{ marginLeft: '16px' }}>
+      {/* Query editor */}
+      <div data-test-subj="pplEditorMonaco">
         <QueryEditor
           value={values.pplQuery || ''}
           onChange={(text) => {
@@ -769,14 +772,13 @@ class CreateMonitor extends Component {
       <EuiSpacer size="m" />
 
       <EuiAccordion
-          id="pplPreviewAccordion"
-          buttonContent="Preview results"
-          paddingSize="m"
-          data-test-subj="pplPreviewAccordion"
-          forceState={this.state.previewOpen ? 'open' : 'closed'}
-          onToggle={(isOpen) => this.setState({ previewOpen: isOpen })}
-          style={{ marginLeft: '16px' }}
-        >
+        id="pplPreviewAccordion"
+        buttonContent="Preview results"
+        paddingSize="m"
+        data-test-subj="pplPreviewAccordion"
+        forceState={this.state.previewOpen ? 'open' : 'closed'}
+        onToggle={(isOpen) => this.setState({ previewOpen: isOpen })}
+      >
         <EuiPanel hasBorder paddingSize="l" data-test-subj="pplResultsPanel">
           <EuiTitle size="s"><h2>Results</h2></EuiTitle>
           <EuiHorizontalRule margin="m" />
@@ -799,9 +801,9 @@ class CreateMonitor extends Component {
   );
 
   // ---- PPL Schedule (unchanged) ----
-  renderPplScheduleBody = (values, setFieldValue) => {
-    const useLB = values.useLookBackWindow ?? true;
-    const lbAmount = Number(values.lookBackAmount ?? 1);
+  renderPplScheduleBody(values, setFieldValue) {
+    const useLB = values.useLookBackWindow !== undefined ? values.useLookBackWindow : true;
+    const lbAmount = Number(values.lookBackAmount !== undefined ? values.lookBackAmount : 1);
     const lbUnit = values.lookBackUnit || 'hours';
 
     const LookBackControls = (
@@ -920,90 +922,6 @@ class CreateMonitor extends Component {
   };
   // ---- END PPL schedule ----
 
-  renderStepPanel = ({ id, title, children, stepNumber, initialIsOpen = true, isLast = false }) => (
-    <div style={{ display: 'flex', marginBottom: '16px' }}>
-      {/* Step number and connecting line */}
-      <div style={{ 
-        display: 'flex', 
-        flexDirection: 'column', 
-        alignItems: 'center',
-        marginRight: '0px',
-        minWidth: '24px'
-      }}>
-        {/* Step number circle */}
-        <div style={{
-          width: '24px',
-          height: '24px',
-          borderRadius: '50%',
-          backgroundColor: '#0066CC',
-          color: 'white',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          fontSize: '12px',
-          fontWeight: 'bold',
-          flexShrink: 0
-        }}>
-          {stepNumber}
-        </div>
-        
-        {/* Connecting line - only show if not last step */}
-        {!isLast && (
-          <div style={{
-            width: '2px',
-            height: '40px',
-            backgroundColor: '#D3DAE6',
-            marginTop: '8px'
-          }} />
-        )}
-      </div>
-      
-      {/* Arrow column - dedicated space for minimize arrows */}
-      <div style={{ 
-        display: 'flex', 
-        flexDirection: 'column', 
-        alignItems: 'center',
-        marginRight: '0px',
-        minWidth: '16px',
-        paddingTop: '100px'
-      }}>
-        {/* Arrow placeholder - this will be filled by EuiAccordion's arrow */}
-        <div style={{ width: '16px', height: '16px' }} />
-      </div>
-      
-      {/* Card content */}
-      <div style={{ flex: 1 }}>
-        <EuiPanel hasBorder paddingSize="none">
-          <EuiAccordion
-            id={id}
-            initialIsOpen={initialIsOpen}
-            paddingSize="none"
-            arrowDisplay="left"
-            className="create-monitor-step-panel"
-            buttonContent={
-              <div style={{ padding: '8px 0px 4px 0px' }}>
-                <EuiTitle size="s">
-                  <h2 style={{ 
-                    margin: 0, 
-                    fontSize: '16px', 
-                    fontWeight: 'bold',
-                    lineHeight: '1.2'
-                  }}>
-                    {title}
-                  </h2>
-                </EuiTitle>
-              </div>
-            }
-          >
-            <div style={{ padding: '0 16px 16px 44px' }}>
-              {children}
-            </div>
-          </EuiAccordion>
-        </EuiPanel>
-      </div>
-    </div>
-  );
-
   render() {
     const {
       edit,
@@ -1078,73 +996,62 @@ class CreateMonitor extends Component {
 
                 {values.monitor_mode === 'ppl' ? (
                   <div data-test-subj="pplBranch">
-                    {this.renderStepPanel({
-                      id: 'pplStep1',
-                      title: 'Monitor details',
-                      stepNumber: 1,
-                      isLast: false,
-                      children: this.renderPplDetailsBody(values, setFieldValue),
-                    })}
-                    
-                    {this.renderStepPanel({
-                      id: 'pplStep2',
-                      title: 'Query',
-                      stepNumber: 2,
-                      isLast: false,
-                      children: this.renderPplQueryBody(values, setFieldValue),
-                    })}
-                    
-                    {this.renderStepPanel({
-                      id: 'pplStep3',
-                      title: 'Schedule',
-                      stepNumber: 3,
-                      isLast: false,
-                      children: this.renderPplScheduleBody(values, setFieldValue),
-                    })}
-                    
-                    {this.renderStepPanel({
-                      id: 'pplStep4',
-                      title: 'Triggers',
-                      stepNumber: 4,
-                      isLast: true,
-                      children: (
-                        <>
-                          <FieldArray name="triggerDefinitions" validateOnChange>
-                            {(triggerArrayHelpers) => (
-                              <ConfigureTriggers
-                                edit={edit}
-                                triggerArrayHelpers={triggerArrayHelpers}
-                                monitor={safeMonitor}
-                                monitorValues={values}
-                                touched={touched}
-                                setFlyout={this.props.setFlyout}
-                                triggers={safeTriggers}
-                                triggerValues={values}
-                                isDarkMode={this.props.isDarkMode}
-                                httpClient={httpClient}
-                                notifications={notifications}
-                                notificationService={notificationService}
-                                plugins={plugins}
-                              />
-                            )}
-                          </FieldArray>
+                    <CustomSteps
+                      steps={[
+                        {
+                          title: 'Monitor details',
+                          children: this.renderPplDetailsBody(values, setFieldValue),
+                        },
+                        {
+                          title: 'Query',
+                          children: this.renderPplQueryBody(values, setFieldValue),
+                        },
+                        {
+                          title: 'Schedule',
+                          children: this.renderPplScheduleBody(values, setFieldValue),
+                        },
+                        {
+                          title: 'Triggers',
+                          children: (
+                            <>
+                              <FieldArray name="triggerDefinitions" validateOnChange>
+                                {(triggerArrayHelpers) => (
+                                  <ConfigureTriggers
+                                    edit={edit}
+                                    triggerArrayHelpers={triggerArrayHelpers}
+                                    monitor={safeMonitor}
+                                    monitorValues={values}
+                                    touched={touched}
+                                    setFlyout={this.props.setFlyout}
+                                    triggers={safeTriggers}
+                                    triggerValues={values}
+                                    isDarkMode={this.props.isDarkMode}
+                                    httpClient={httpClient}
+                                    notifications={notifications}
+                                    notificationService={notificationService}
+                                    plugins={plugins}
+                                  />
+                                )}
+                              </FieldArray>
 
-                          <EuiSpacer />
-                          <EuiFlexGroup alignItems="center" justifyContent="flexEnd">
-                            <EuiFlexItem grow={false}>
-                              <EuiSmallButtonEmpty onClick={this.onCancel}>
-                                Cancel
-                              </EuiSmallButtonEmpty>
-                            </EuiFlexItem>
-                            <EuiFlexItem grow={false}>
-                              <EuiSmallButton fill onClick={handleSubmit} isLoading={isSubmitting}>
-                                {edit ? 'Save' : 'Create'}
-                              </EuiSmallButton>
-                            </EuiFlexItem>
-                          </EuiFlexGroup>
-                        </>
-                      ),
-                    })}
+                              <EuiSpacer />
+                              <EuiFlexGroup alignItems="center" justifyContent="flexEnd">
+                                <EuiFlexItem grow={false}>
+                                  <EuiSmallButtonEmpty onClick={this.onCancel}>
+                                    Cancel
+                                  </EuiSmallButtonEmpty>
+                                </EuiFlexItem>
+                                <EuiFlexItem grow={false}>
+                                  <EuiSmallButton fill onClick={handleSubmit} isLoading={isSubmitting}>
+                                    {edit ? 'Save' : 'Create'}
+                                  </EuiSmallButton>
+                                </EuiFlexItem>
+                              </EuiFlexGroup>
+                            </>
+                          ),
+                        },
+                      ]}
+                    />
                   </div>
                 ) : (
                   <div data-test-subj="legacyBranch">
