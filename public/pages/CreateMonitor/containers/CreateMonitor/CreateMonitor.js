@@ -74,6 +74,7 @@ import {
   SaveQueryFlyout,
   OpenSavedQueryFlyout,
 } from '../../../../../../../src/plugins/data/public';
+import { setDataSource } from '../../../../services';
 
 
 class CreateMonitor extends Component {
@@ -360,7 +361,12 @@ class CreateMonitor extends Component {
   };
 
   async componentDidMount() {
-    const { httpClient } = this.props;
+    const { httpClient, landingDataSourceId } = this.props;
+
+    // Set data source before making any API calls that use getDataSourceQueryObj()
+    if (landingDataSourceId) {
+      setDataSource({ dataSourceId: landingDataSourceId });
+    }
 
     const updatePlugins = async () => {
       const newPlugins = await getPlugins(httpClient);

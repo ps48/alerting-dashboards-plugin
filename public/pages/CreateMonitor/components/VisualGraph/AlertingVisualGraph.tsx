@@ -169,8 +169,6 @@ export const AlertingVisualGraph: React.FC<AlertingVisualGraphProps> = ({
 
   // Calculate domains - memoize with thresholdValue as dependency
   const { xDomain, yDomain, dataMax } = useMemo(() => {
-    console.log('AlertingVisualGraph - Recalculating domains with thresholdValue:', thresholdValue);
-    
     // Ensure we have valid x values
     const xValues = data.map(d => d.x).filter(x => x != null && !isNaN(x));
     
@@ -188,11 +186,9 @@ export const AlertingVisualGraph: React.FC<AlertingVisualGraphProps> = ({
     let yMax = dMax;
     if (thresholdValue && typeof thresholdValue === 'number' && !isNaN(thresholdValue) && thresholdValue > 0) {
       yMax = thresholdValue;
-      console.log('AlertingVisualGraph - Using threshold value as Y max:', yMax);
     } else {
       // Add padding only if no threshold is set
       yMax = dMax + Math.max(1, Math.ceil(dMax * 0.1));
-      console.log('AlertingVisualGraph - Using data max with padding as Y max:', yMax);
     }
     
     const yDom = {
@@ -200,14 +196,12 @@ export const AlertingVisualGraph: React.FC<AlertingVisualGraphProps> = ({
       max: Math.max(yMax, 1), // Ensure at least 1 to avoid 0 scale
     };
 
-    console.log('AlertingVisualGraph - Final Y domain:', yDom);
     return { xDomain: xDom, yDomain: yDom, dataMax: dMax };
   }, [data, thresholdValue]);
   
   // Notify parent of the max Y value from data (for setting default threshold)
   React.useEffect(() => {
     if (onMaxYValueCalculated && dataMax > 0) {
-      console.log('AlertingVisualGraph - Calling onMaxYValueCalculated with dataMax:', Math.ceil(dataMax));
       onMaxYValueCalculated(Math.ceil(dataMax));
     }
   }, [dataMax, onMaxYValueCalculated]);
