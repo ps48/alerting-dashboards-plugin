@@ -103,14 +103,21 @@ class CreateMonitor extends Component {
     try {
       const params = new URLSearchParams(location?.search || '');
       const incoming = params.get('ppl') || params.get('pplQuery');
+      const incomingDataSourceId = params.get('dataSourceId');
+      
       if (incoming) {
         initialValues.pplQuery = decodeURIComponent(incoming);
         // optional: ensure we're in PPL mode
         initialValues.monitor_mode = 'ppl';
-        // optional: clean the URL so the value doesn't re-apply on back/forward
-        if (props.history?.replace) {
-          props.history.replace({ ...location, search: '' });
-        }
+      }
+      
+      if (incomingDataSourceId) {
+        initialValues.dataSourceId = incomingDataSourceId;
+      }
+      
+      // optional: clean the URL so the value doesn't re-apply on back/forward
+      if ((incoming || incomingDataSourceId) && props.history?.replace) {
+        props.history.replace({ ...location, search: '' });
       }
     } catch {
       // noop — safe fallback if URL parsing fails
