@@ -222,6 +222,7 @@ class CreateMonitor extends Component {
 
     this.state = {
       plugins: [],
+      pluginsLoading: true,
       response: null,
       performanceResponse: null,
       initialValues,
@@ -363,14 +364,32 @@ class CreateMonitor extends Component {
   async componentDidMount() {
     const { httpClient, landingDataSourceId } = this.props;
 
+    console.log('[CreateMonitor] componentDidMount - landingDataSourceId:', landingDataSourceId);
+
     // Set data source before making any API calls that use getDataSourceQueryObj()
+    // Initialize with empty object if landingDataSourceId is not available yet
     if (landingDataSourceId) {
+      console.log('[CreateMonitor] Setting data source with ID:', landingDataSourceId);
       setDataSource({ dataSourceId: landingDataSourceId });
+    } else {
+      console.log('[CreateMonitor] No landingDataSourceId yet, setting empty data source');
+      // Initialize with empty/null to prevent "DataSource was not set" error
+      setDataSource({ dataSourceId: undefined });
     }
 
     const updatePlugins = async () => {
-      const newPlugins = await getPlugins(httpClient);
-      this.setState({ plugins: newPlugins });
+      console.log('[CreateMonitor] Starting to fetch plugins...');
+      try {
+        const newPlugins = await getPlugins(httpClient);
+        console.log('[CreateMonitor] Fetched plugins:', newPlugins);
+        this.setState({ plugins: newPlugins, pluginsLoading: false }, () => {
+          console.log('[CreateMonitor] State updated with plugins:', this.state.plugins);
+        });
+      } catch (error) {
+        console.error('[CreateMonitor] Error fetching plugins:', error);
+        // Set pluginsLoading to false even on error so UI doesn't get stuck
+        this.setState({ pluginsLoading: false });
+      }
     };
 
     updatePlugins();
@@ -380,11 +399,33 @@ class CreateMonitor extends Component {
 
   componentDidUpdate(prevProps) {
     if (isDataSourceChanged(prevProps, this.props)) {
+      console.log('[CreateMonitor] Data source changed from', prevProps.landingDataSourceId, 'to', this.props.landingDataSourceId);
+      
+      // Update the data source service
+      if (this.props.landingDataSourceId) {
+        setDataSource({ dataSourceId: this.props.landingDataSourceId });
+      }
+      
       this.formikRef.current?.setFieldValue(
         'dataSourceId',
         this.props.landingDataSourceId,
         false /* no validate */
       );
+      
+      // Refetch plugins with new data source
+      const updatePlugins = async () => {
+        console.log('[CreateMonitor] Refetching plugins after data source change...');
+        this.setState({ pluginsLoading: true });
+        try {
+          const newPlugins = await getPlugins(this.props.httpClient);
+          console.log('[CreateMonitor] Refetched plugins:', newPlugins);
+          this.setState({ plugins: newPlugins, pluginsLoading: false });
+        } catch (error) {
+          console.error('[CreateMonitor] Error refetching plugins:', error);
+          this.setState({ pluginsLoading: false });
+        }
+      };
+      updatePlugins();
     }
   }
 
@@ -955,7 +996,7 @@ class CreateMonitor extends Component {
       isDarkMode,
       notificationService,
     } = this.props;
-    const { createModalOpen, initialValues, plugins } = this.state;
+    const { createModalOpen, initialValues, plugins, pluginsLoading } = this.state;
 
     return (
       <div style={{ padding: '16px' }}>
@@ -1052,6 +1093,7 @@ class CreateMonitor extends Component {
                                     notifications={notifications}
                                     notificationService={notificationService}
                                     plugins={plugins}
+                                    pluginsLoading={pluginsLoading}
                                   />
                                 )}
                               </FieldArray>
@@ -1143,6 +1185,7 @@ class CreateMonitor extends Component {
                           notifications={notifications}
                           notificationService={notificationService}
                           plugins={plugins}
+                          pluginsLoading={pluginsLoading}
                         />
                       )}
                     </FieldArray>

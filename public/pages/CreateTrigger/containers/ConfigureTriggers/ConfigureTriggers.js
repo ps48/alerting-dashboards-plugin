@@ -299,6 +299,7 @@ class ConfigureTriggers extends React.Component {
       httpClient,
       notificationService,
       plugins,
+      pluginsLoading,
       flyoutMode,
       submitCount,
       errors,
@@ -321,6 +322,7 @@ class ConfigureTriggers extends React.Component {
         notifications={notifications}
         notificationService={notificationService}
         plugins={plugins}
+        pluginsLoading={pluginsLoading}
         flyoutMode={flyoutMode}
         submitCount={submitCount}
         errors={errors}

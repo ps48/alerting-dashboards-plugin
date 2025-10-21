@@ -90,8 +90,12 @@ class ConfigureActions extends React.Component {
     this.setState({ allowList });
 
     // Check if notification plugin is present
+    console.log('[ConfigureActions] componentDidMount - checking plugins:', plugins);
     if (plugins.indexOf(OS_NOTIFICATION_PLUGIN) !== -1) {
+      console.log('[ConfigureActions] Notification plugin found!');
       this.setState({ hasNotificationPlugin: true });
+    } else {
+      console.log('[ConfigureActions] Notification plugin NOT found');
     }
 
     this.loadDestinations();
@@ -131,8 +135,12 @@ class ConfigureActions extends React.Component {
 
   componentDidUpdate(prevProps) {
     if (this.props.plugins !== prevProps.plugins) {
+      console.log('[ConfigureActions] componentDidUpdate - plugins changed from:', prevProps.plugins, 'to:', this.props.plugins);
       if (this.props.plugins.indexOf(OS_NOTIFICATION_PLUGIN) !== -1) {
+        console.log('[ConfigureActions] Notification plugin found in update!');
         this.setState({ hasNotificationPlugin: true });
+      } else {
+        console.log('[ConfigureActions] Notification plugin NOT found in update');
       }
 
       this.loadDestinations();

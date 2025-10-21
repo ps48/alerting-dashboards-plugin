@@ -79,12 +79,14 @@ const TriggerGraph = ({
       {/* Hidden field to get formik helper for auto-setting threshold */}
       <Field name={`${fieldPath}thresholdValue`}>
         {({ field, form }) => {
-          // Capture formik helper on first render
-          if (!formikHelperRef) {
-            setFormikHelperRef({
-              setValue: (val) => form.setFieldValue(field.name, val, false)
-            });
-          }
+          // Use useEffect to capture formik helper without triggering setState during render
+          useEffect(() => {
+            if (!formikHelperRef) {
+              setFormikHelperRef({
+                setValue: (val) => form.setFieldValue(field.name, val, false)
+              });
+            }
+          }, [form, field.name]);
           return null;
         }}
       </Field>

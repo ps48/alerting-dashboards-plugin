@@ -431,7 +431,9 @@ class DefineTrigger extends Component {
       errors,
     } = this.props;
 
-    const hasNotificationPlugin = plugins?.indexOf(OS_NOTIFICATION_PLUGIN) !== -1;
+    const { pluginsLoading } = this.props;
+    const hasNotificationPlugin = !pluginsLoading && plugins?.indexOf(OS_NOTIFICATION_PLUGIN) !== -1;
+    console.log('[DefineTrigger] Checking notification plugin. pluginsLoading:', pluginsLoading, 'plugins:', plugins, 'hasNotificationPlugin:', hasNotificationPlugin);
 
     // Legacy context still uses executeResponse; PPL path uses graphResponse directly
     const ctxExec = executeResponse ?? this.props.executeResponse;
@@ -780,11 +782,18 @@ class DefineTrigger extends Component {
             </FieldArray>
           )}
 
-          {!hasNotificationPlugin && (
+          {!pluginsLoading && !hasNotificationPlugin && (
             <>
               <EuiCallOut title="The Notifications plugin is not installed" color="warning">
                 <p>Alerts still appear on the dashboard visualization when the trigger condition is met.</p>
               </EuiCallOut>
+              <EuiSpacer size="m" />
+            </>
+          )}
+          
+          {pluginsLoading && (
+            <>
+              <EuiText size="s" color="subdued">Loading notification channels...</EuiText>
               <EuiSpacer size="m" />
             </>
           )}
