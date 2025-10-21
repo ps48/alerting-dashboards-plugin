@@ -727,28 +727,29 @@ class DefineTrigger extends Component {
 
           {/* Expires */}
           <EuiSpacer size="s" />
-          <EuiFlexGroup gutterSize="s" style={{ paddingLeft: GRID_PAD, maxWidth: GRID_MAX }} alignItems="flexEnd">
-            <EuiFlexItem>
-              <FormikFieldText
-                name={`${fieldPath}expires.value`}
-                formRow
-                rowProps={{ label: 'Expires', fullWidth: true, style: { paddingLeft: 0 } }}
-                inputProps={{ type: 'number', min: 1, fullWidth: true }}
-              />
-            </EuiFlexItem>
-            <EuiFlexItem>
-              <FormikSelect
-                name={`${fieldPath}expires.unit`}
-                formRow
-                rowProps={{ hasEmptyLabelSpace: true, fullWidth: true, style: { paddingLeft: 0 } }}
-                inputProps={{ options: [
-                  { value: 'minutes', text: 'minute(s)' },
-                  { value: 'hours', text: 'hour(s)' },
-                  { value: 'days', text: 'day(s)' },
-                ], fullWidth: true }}
-              />
-            </EuiFlexItem>
-          </EuiFlexGroup>
+          <div style={{ paddingLeft: GRID_PAD, maxWidth: GRID_MAX }}>
+            <EuiText size="xs" style={{ fontWeight: 'bold' }}>
+              <span>Expires</span>
+            </EuiText>
+            <EuiFlexGroup gutterSize="s" alignItems="flexEnd" style={{ marginTop: 0 }}>
+              <EuiFlexItem>
+                <FormikFieldText
+                  name={`${fieldPath}expires.value`}
+                  inputProps={{ type: 'number', min: 1, fullWidth: true }}
+                />
+              </EuiFlexItem>
+              <EuiFlexItem>
+                <FormikSelect
+                  name={`${fieldPath}expires.unit`}
+                  inputProps={{ options: [
+                    { value: 'minutes', text: 'minute(s)' },
+                    { value: 'hours', text: 'hour(s)' },
+                    { value: 'days', text: 'day(s)' },
+                  ], fullWidth: true }}
+                />
+              </EuiFlexItem>
+            </EuiFlexGroup>
+          </div>
 
           {/* Notifications */}
           <EuiSpacer size="l" />
