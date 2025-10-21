@@ -4,6 +4,7 @@
  */
 
 import React, { Component, Fragment } from 'react';
+import './CreateMonitor.scss';
 import _ from 'lodash';
 import { FieldArray, Formik } from 'formik';
 import {
@@ -926,7 +927,7 @@ class CreateMonitor extends Component {
         display: 'flex', 
         flexDirection: 'column', 
         alignItems: 'center',
-        marginRight: '16px',
+        marginRight: '0px',
         minWidth: '24px'
       }}>
         {/* Step number circle */}
@@ -962,9 +963,9 @@ class CreateMonitor extends Component {
         display: 'flex', 
         flexDirection: 'column', 
         alignItems: 'center',
-        marginRight: '8px',
+        marginRight: '0px',
         minWidth: '16px',
-        paddingTop: '4px'
+        paddingTop: '100px'
       }}>
         {/* Arrow placeholder - this will be filled by EuiAccordion's arrow */}
         <div style={{ width: '16px', height: '16px' }} />
@@ -978,8 +979,9 @@ class CreateMonitor extends Component {
             initialIsOpen={initialIsOpen}
             paddingSize="none"
             arrowDisplay="left"
+            className="create-monitor-step-panel"
             buttonContent={
-              <div style={{ padding: '4px 0px 4px 0px' }}>
+              <div style={{ padding: '8px 0px 4px 0px' }}>
                 <EuiTitle size="s">
                   <h2 style={{ 
                     margin: 0, 
@@ -993,7 +995,7 @@ class CreateMonitor extends Component {
               </div>
             }
           >
-            <div style={{ padding: '0 16px 16px 32px' }}>
+            <div style={{ padding: '0 16px 16px 44px' }}>
               {children}
             </div>
           </EuiAccordion>
