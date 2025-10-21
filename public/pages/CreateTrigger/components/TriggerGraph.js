@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React from 'react';
+import React, { useRef, useCallback, useEffect, useState } from 'react';
 import PropTypes from 'prop-types';
 import _ from 'lodash';
 import { EuiSpacer, EuiText, EuiRadioGroup } from '@elastic/eui';
@@ -21,6 +21,32 @@ const TriggerGraph = ({
   hideThresholdControls = false,
   showModeSelector = false,
 }) => {
+  console.log('TriggerGraph - Received thresholdValue:', thresholdValue, 'fieldPath:', fieldPath);
+  
+  const hasSetInitialThreshold = useRef(false);
+  const [graphKey, setGraphKey] = useState(0);
+  const [formikHelperRef, setFormikHelperRef] = useState(null);
+  
+  // Force re-render of AlertingVisualGraph when thresholdValue changes
+  useEffect(() => {
+    console.log('TriggerGraph - thresholdValue changed, forcing graph re-render');
+    setGraphKey(prev => prev + 1);
+  }, [thresholdValue]);
+  
+  // Callback to set the default threshold value based on max Y value from data
+  const handleMaxYValueCalculated = useCallback((maxY) => {
+    console.log('TriggerGraph - handleMaxYValueCalculated called with maxY:', maxY, 'current threshold:', thresholdValue);
+    // Only set the threshold automatically if:
+    // 1. We haven't set it before for this trigger
+    // 2. The current value is the default 10000
+    // 3. maxY is a valid number greater than 0
+    // 4. We have access to formik
+    if (!hasSetInitialThreshold.current && thresholdValue === 10000 && maxY > 0 && formikHelperRef) {
+      console.log('TriggerGraph - Setting initial threshold to:', maxY);
+      formikHelperRef.setValue(maxY);
+      hasSetInitialThreshold.current = true;
+    }
+  }, [thresholdValue, formikHelperRef]);
   // Try common agg names. If still empty, tolerate total-only responses by faking a flat line.
   let buckets =
     _.get(response, 'aggregations.date_histogram.buckets') ||
@@ -55,6 +81,19 @@ const TriggerGraph = ({
 
   return (
     <div style={flyoutMode ? {} : { padding: '0px 10px' }}>
+      {/* Hidden field to get formik helper for auto-setting threshold */}
+      <Field name={`${fieldPath}thresholdValue`}>
+        {({ field, form }) => {
+          // Capture formik helper on first render
+          if (!formikHelperRef) {
+            setFormikHelperRef({
+              setValue: (val) => form.setFieldValue(field.name, val, false)
+            });
+          }
+          return null;
+        }}
+      </Field>
+      
       {!hideThresholdControls && (
         <TriggerExpressions
           thresholdValue={thresholdValue}
@@ -102,10 +141,12 @@ const TriggerGraph = ({
       <>
         {!hideThresholdControls && <EuiSpacer size="m" />}
         <AlertingVisualGraph
+          key={graphKey}
           values={monitorValues}
           thresholdValue={thresholdValue}
           response={graphResponse}
           services={{}}
+          onMaxYValueCalculated={handleMaxYValueCalculated}
         />
       </>
     </div>

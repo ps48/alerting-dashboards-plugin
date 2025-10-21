@@ -25,6 +25,7 @@ interface AlertingVisualGraphProps {
   thresholdValue?: number;
   values: any;
   services: any;
+  onMaxYValueCalculated?: (maxY: number) => void;
 }
 
 interface ChartData {
@@ -131,12 +132,10 @@ export const AlertingVisualGraph: React.FC<AlertingVisualGraphProps> = ({
   thresholdValue,
   values,
   services,
+  onMaxYValueCalculated,
 }) => {
   const chartData = useMemo(() => {
-    const processed = processPPLResponseToChartData(response);
-    console.log('AlertingVisualGraph - Response:', response);
-    console.log('AlertingVisualGraph - Processed chart data:', processed);
-    return processed;
+    return processPPLResponseToChartData(response);
   }, [response]);
 
   const timefilterUpdateHandler = useCallback((ranges: { from: number; to: number }) => {
@@ -157,8 +156,8 @@ export const AlertingVisualGraph: React.FC<AlertingVisualGraphProps> = ({
   const dataToUse = chartData?.values?.length > 0 ? chartData.values : mockData;
   const hasRealData = chartData?.values?.length > 0;
 
-  // Validate and clean data
-  const data = dataToUse.filter(item => 
+  // Validate and clean data - memoize to avoid recalculation
+  const data = useMemo(() => dataToUse.filter(item => 
     item && 
     typeof item.x === 'number' && 
     typeof item.y === 'number' && 
@@ -166,33 +165,52 @@ export const AlertingVisualGraph: React.FC<AlertingVisualGraphProps> = ({
     !isNaN(item.y) &&
     isFinite(item.x) &&
     isFinite(item.y)
-  );
+  ), [dataToUse]);
 
-  // Ensure we have valid x values
-  const xValues = data.map(d => d.x).filter(x => x != null && !isNaN(x));
-  
-  // Calculate X domain (time values)
-  const xDomain = {
-    min: Math.min(...xValues),
-    max: Math.max(...xValues),
-  };
+  // Calculate domains - memoize with thresholdValue as dependency
+  const { xDomain, yDomain, dataMax } = useMemo(() => {
+    console.log('AlertingVisualGraph - Recalculating domains with thresholdValue:', thresholdValue);
+    
+    // Ensure we have valid x values
+    const xValues = data.map(d => d.x).filter(x => x != null && !isNaN(x));
+    
+    // Calculate X domain (time values)
+    const xDom = {
+      min: Math.min(...xValues),
+      max: Math.max(...xValues),
+    };
 
-  // Calculate Y domain - scale to accommodate threshold value
-  const yValues = data.map(d => d.y).filter(y => y != null && !isNaN(y));
-  const dataMax = Math.max(...yValues);
-  let yMax = dataMax;
+    // Calculate Y domain - use threshold value to set Y-axis scale
+    const yValues = data.map(d => d.y).filter(y => y != null && !isNaN(y));
+    const dMax = Math.max(...yValues, 0);
+    
+    // Use threshold value as the Y-axis max (if provided), otherwise use data max with padding
+    let yMax = dMax;
+    if (thresholdValue && typeof thresholdValue === 'number' && !isNaN(thresholdValue) && thresholdValue > 0) {
+      yMax = thresholdValue;
+      console.log('AlertingVisualGraph - Using threshold value as Y max:', yMax);
+    } else {
+      // Add padding only if no threshold is set
+      yMax = dMax + Math.max(1, Math.ceil(dMax * 0.1));
+      console.log('AlertingVisualGraph - Using data max with padding as Y max:', yMax);
+    }
+    
+    const yDom = {
+      min: 0, // Always start from 0
+      max: Math.max(yMax, 1), // Ensure at least 1 to avoid 0 scale
+    };
+
+    console.log('AlertingVisualGraph - Final Y domain:', yDom);
+    return { xDomain: xDom, yDomain: yDom, dataMax: dMax };
+  }, [data, thresholdValue]);
   
-  // If threshold is provided, scale Y-axis to accommodate it
-  if (thresholdValue && typeof thresholdValue === 'number' && !isNaN(thresholdValue)) {
-    yMax = Math.max(dataMax, thresholdValue);
-  }
-  
-  // Add padding above max value
-  const yPadding = Math.max(1, Math.ceil(yMax * 0.1));
-  const yDomain = {
-    min: 0, // Always start from 0
-    max: yMax + yPadding,
-  };
+  // Notify parent of the max Y value from data (for setting default threshold)
+  React.useEffect(() => {
+    if (onMaxYValueCalculated && dataMax > 0) {
+      console.log('AlertingVisualGraph - Calling onMaxYValueCalculated with dataMax:', Math.ceil(dataMax));
+      onMaxYValueCalculated(Math.ceil(dataMax));
+    }
+  }, [dataMax, onMaxYValueCalculated]);
 
 
   // Create threshold line annotation if threshold value is provided
@@ -203,24 +221,15 @@ export const AlertingVisualGraph: React.FC<AlertingVisualGraphProps> = ({
     }
   ] : [];
 
-  console.log('AlertingVisualGraph - Using data:', dataToUse);
-  console.log('AlertingVisualGraph - Has real data:', hasRealData);
-  console.log('AlertingVisualGraph - Cleaned data:', data);
-  console.log('AlertingVisualGraph - Data length:', data.length);
-  console.log('AlertingVisualGraph - X domain:', xDomain);
-  console.log('AlertingVisualGraph - Y domain:', yDomain);
-  console.log('AlertingVisualGraph - Threshold value:', thresholdValue);
-  console.log('AlertingVisualGraph - Line annotation data:', lineAnnotationData);
-
   if (data.length === 0) {
     return (
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '450px' }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '160px' }}>
         <EuiText>No valid data points found.</EuiText>
       </div>
     );
   }
 
-  if (xValues.length === 0) {
+  if (!xDomain || !isFinite(xDomain.min) || !isFinite(xDomain.max)) {
     return (
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '160px' }}>
         <EuiText>No valid time data found.</EuiText>
@@ -274,10 +283,9 @@ export const AlertingVisualGraph: React.FC<AlertingVisualGraphProps> = ({
           data-test-subj="alertingTimechart"
         >
           <div className="alertingHistogram" data-test-subj="alertingChart" style={{ height: '160px' }}>
-            <Chart size="100%">
+            <Chart size="100%" key={`chart-${thresholdValue}-${dataMax}`}>
               <Settings
                 xDomain={xDomain}
-                yDomain={yDomain}
                 tooltip={{
                   type: TooltipType.VerticalCursor,
                 }}
@@ -287,12 +295,15 @@ export const AlertingVisualGraph: React.FC<AlertingVisualGraphProps> = ({
                 id="alerting-histogram-left-axis"
                 position={Position.Left}
                 title="Count"
+                ticks={5}
                 tickFormat={formatYValue}
+                domain={yDomain}
               />
               <Axis
                 id="alerting-histogram-bottom-axis"
                 position={Position.Bottom}
                 title="Time"
+                ticks={10}
                 tickFormat={formatXValue}
               />
               {thresholdValue && lineAnnotationData.length > 0 && (
