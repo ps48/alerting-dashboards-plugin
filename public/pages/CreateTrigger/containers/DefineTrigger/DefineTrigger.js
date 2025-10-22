@@ -691,50 +691,65 @@ class DefineTrigger extends Component {
           {suppressToggle}
           {suppressEnabled && (
             <>
-              {(() => {
-                const throttleVal = Number(_.get(triggerValues, `${fieldPath}suppress.value`, 1));
-                const throttleUnit = _.get(triggerValues, `${fieldPath}suppress.unit`, 'minutes');
-                const throttleMinutes = throttleUnit === 'minutes' ? throttleVal : throttleUnit === 'hours' ? throttleVal * 60 : throttleVal * 1440;
-                const throttleError = throttleMinutes < 1 || throttleMinutes > 7200;
-                
-                return (
-                  <EuiFlexGroup gutterSize="s" style={{ paddingLeft: GRID_PAD, maxWidth: GRID_MAX }} alignItems="flexEnd">
-                    <EuiFlexItem>
-                      <FormikFieldText
-                        name={`${fieldPath}suppress.value`}
-                        formRow
-                        rowProps={{ 
-                          label: 'Throttle for', 
-                          fullWidth: true, 
-                          style: { paddingLeft: 0 },
-                          isInvalid: throttleError,
-                          error: throttleError ? 'Must be between 1 minute and 5 days' : undefined
-                        }}
-                        inputProps={{ type: 'number', min: 1, fullWidth: true, isInvalid: throttleError }}
-                      />
-                    </EuiFlexItem>
-                    <EuiFlexItem>
-                      <FormikSelect
-                        name={`${fieldPath}suppress.unit`}
-                        formRow
-                        rowProps={{ hasEmptyLabelSpace: true, fullWidth: true, style: { paddingLeft: 0 } }}
-                        inputProps={{ options: [
-                          { value: 'minutes', text: 'minute(s)' },
-                          { value: 'hours', text: 'hour(s)' },
-                          { value: 'days', text: 'day(s)' },
-                        ], fullWidth: true }}
-                      />
-                    </EuiFlexItem>
-                  </EuiFlexGroup>
-                );
-              })()}
+              <div style={{ paddingLeft: GRID_PAD, maxWidth: GRID_MAX }}>
+                <EuiText size="xs" style={{ fontWeight: 'bold', marginBottom: '4px' }}>
+                  <span>Throttle for</span>
+                </EuiText>
+                {(() => {
+                  const throttleVal = Number(_.get(triggerValues, `${fieldPath}suppress.value`, 1));
+                  const throttleUnit = _.get(triggerValues, `${fieldPath}suppress.unit`, 'minutes');
+                  const throttleMinutes = throttleUnit === 'minutes' ? throttleVal : throttleUnit === 'hours' ? throttleVal * 60 : throttleVal * 1440;
+                  const throttleError = throttleMinutes < 1 || throttleMinutes > 7200;
+                  
+                  return (
+                    <div>
+                      <EuiFlexGroup gutterSize="s" alignItems="flexEnd" style={{ marginTop: 0 }}>
+                        <EuiFlexItem>
+                          <FormikFieldText
+                            name={`${fieldPath}suppress.value`}
+                            formRow
+                            rowProps={{ 
+                              fullWidth: true, 
+                              style: { paddingLeft: 0, marginTop: 0 },
+                              isInvalid: throttleError,
+                              error: undefined, // Remove built-in error display
+                              hasEmptyLabelSpace: true
+                            }}
+                            inputProps={{ type: 'number', min: 1, fullWidth: true, isInvalid: throttleError }}
+                          />
+                        </EuiFlexItem>
+                        <EuiFlexItem>
+                          <FormikSelect
+                            name={`${fieldPath}suppress.unit`}
+                            formRow
+                            rowProps={{ hasEmptyLabelSpace: true, fullWidth: true, style: { paddingLeft: 0, marginTop: 0 } }}
+                            inputProps={{ options: [
+                              { value: 'minutes', text: 'minute(s)' },
+                              { value: 'hours', text: 'hour(s)' },
+                              { value: 'days', text: 'day(s)' },
+                            ], fullWidth: true }}
+                          />
+                        </EuiFlexItem>
+                      </EuiFlexGroup>
+                      {/* Reserve space for error message to prevent layout shift */}
+                      <div style={{ height: throttleError ? 'auto' : '20px', minHeight: '20px' }}>
+                        {throttleError && (
+                          <EuiText size="xs" color="danger" style={{ marginTop: '4px' }}>
+                            Must be between 1 minute and 5 days
+                          </EuiText>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })()}
+              </div>
             </>
           )}
 
           {/* Expires */}
           <EuiSpacer size="s" />
           <div style={{ paddingLeft: GRID_PAD, maxWidth: GRID_MAX }}>
-            <EuiText size="xs" style={{ fontWeight: 'bold' }}>
+            <EuiText size="xs" style={{ fontWeight: 'bold', marginBottom: '4px' }}>
               <span>Expires</span>
             </EuiText>
             {(() => {
@@ -744,30 +759,44 @@ class DefineTrigger extends Component {
               const expiresError = expiresMinutes < 1 || expiresMinutes > 43200;
               
               return (
-                <EuiFlexGroup gutterSize="s" alignItems="flexEnd" style={{ marginTop: 0 }}>
-                  <EuiFlexItem>
-                    <FormikFieldText
-                      name={`${fieldPath}expires.value`}
-                      formRow
-                      rowProps={{
-                        isInvalid: expiresError,
-                        error: expiresError ? 'Must be between 1 minute and 30 days' : undefined,
-                        hasEmptyLabelSpace: true
-                      }}
-                      inputProps={{ type: 'number', min: 1, fullWidth: true, isInvalid: expiresError }}
-                    />
-                  </EuiFlexItem>
-                  <EuiFlexItem>
-                    <FormikSelect
-                      name={`${fieldPath}expires.unit`}
-                      inputProps={{ options: [
-                        { value: 'minutes', text: 'minute(s)' },
-                        { value: 'hours', text: 'hour(s)' },
-                        { value: 'days', text: 'day(s)' },
-                      ], fullWidth: true }}
-                    />
-                  </EuiFlexItem>
-                </EuiFlexGroup>
+                <div>
+                  <EuiFlexGroup gutterSize="s" alignItems="flexEnd" style={{ marginTop: 0 }}>
+                    <EuiFlexItem>
+                      <FormikFieldText
+                        name={`${fieldPath}expires.value`}
+                        formRow
+                        rowProps={{
+                          fullWidth: true,
+                          style: { paddingLeft: 0, marginTop: 0 },
+                          isInvalid: expiresError,
+                          error: undefined, // Remove built-in error display
+                          hasEmptyLabelSpace: true
+                        }}
+                        inputProps={{ type: 'number', min: 1, fullWidth: true, isInvalid: expiresError }}
+                      />
+                    </EuiFlexItem>
+                    <EuiFlexItem>
+                      <FormikSelect
+                        name={`${fieldPath}expires.unit`}
+                        formRow
+                        rowProps={{ hasEmptyLabelSpace: true, fullWidth: true, style: { paddingLeft: 0, marginTop: 0 } }}
+                        inputProps={{ options: [
+                          { value: 'minutes', text: 'minute(s)' },
+                          { value: 'hours', text: 'hour(s)' },
+                          { value: 'days', text: 'day(s)' },
+                        ], fullWidth: true }}
+                      />
+                    </EuiFlexItem>
+                  </EuiFlexGroup>
+                  {/* Reserve space for error message to prevent layout shift */}
+                  <div style={{ height: expiresError ? 'auto' : '20px', minHeight: '20px' }}>
+                    {expiresError && (
+                      <EuiText size="xs" color="danger" style={{ marginTop: '4px' }}>
+                        Must be between 1 minute and 30 days
+                      </EuiText>
+                    )}
+                  </div>
+                </div>
               );
             })()}
           </div>

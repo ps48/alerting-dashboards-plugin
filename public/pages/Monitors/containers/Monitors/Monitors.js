@@ -299,18 +299,18 @@ export default class Monitors extends Component {
 
   async deleteMonitors(items) {
     const { httpClient, notifications } = this.props;
+    
     const arrayOfPromises = items.map((item) =>
       deleteMonitor(item, httpClient, notifications, getDataSourceQueryObj()).catch(
         (error) => error
       )
     );
 
-    return Promise.all(arrayOfPromises).then((values) => {
-      // TODO: Show which values failed, succeeded, etc.
-      const { page, size, search, sortField, sortDirection, monitorState } = this.state;
-      this.getMonitors(page * size, size, search, sortField, sortDirection, monitorState);
-      this.setState({ selectedItems: [] });
-    });
+    await Promise.all(arrayOfPromises);
+    // TODO: Show which values failed, succeeded, etc.
+    const { page, size, search, sortField, sortDirection, monitorState } = this.state;
+    await this.getMonitors(page * size, size, search, sortField, sortDirection, monitorState);
+    this.setState({ selectedItems: [] });
   }
 
   async onClickAcknowledge(item) {
@@ -592,7 +592,9 @@ export default class Monitors extends Component {
             monitors={monitorItemsToDelete}
             httpClient={this.props.httpClient}
             closeDeleteModal={() => this.setState({ monitorItemsToDelete: undefined })}
-            onClickDelete={() => this.deleteMonitors(this.state.monitorItemsToDelete)}
+            onClickDelete={async () => {
+              await this.deleteMonitors(this.state.monitorItemsToDelete);
+            }}
           />
         )}
       </>

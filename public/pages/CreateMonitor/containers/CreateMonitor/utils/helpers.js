@@ -367,7 +367,7 @@ export const pplToV2Schedule = (values) => {
   if (freq === 'interval') {
     return {
       period: {
-        interval: Number(values.period?.interval || 1),
+        interval: values.period?.interval === '' ? 1 : Number(values.period?.interval || 1),
         unit: values.period?.unit || 'MINUTES',
       },
     };

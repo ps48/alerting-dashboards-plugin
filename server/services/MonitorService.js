@@ -87,9 +87,38 @@ export default class MonitorService extends MDSEnabledClientService {
   alertsForMonitorsV2 = async (context, req, res) => {
     try {
       const client = this.getClientBasedOnDataSource(context, req);
-      const resp = await client('alerting.alertsForMonitorsV2'); // maps to /_plugins/_alerting/v2/monitors/alerts
+      
+      // Build query string from request query params
+      const queryParams = req.query || {};
+      const qs = new URLSearchParams();
+      
+      // Pass through all relevant query parameters
+      if (queryParams.monitorIds) {
+        const ids = Array.isArray(queryParams.monitorIds) 
+          ? queryParams.monitorIds.join(',')
+          : String(queryParams.monitorIds);
+        qs.append('monitorIds', ids);
+      }
+      
+      const path = `/_plugins/_alerting/v2/monitors/alerts${qs.toString() ? `?${qs}` : ''}`;
+      
+      const resp = await client('transport.request', {
+        method: 'GET',
+        path,
+        headers: DEFAULT_HEADERS,
+      });
+      
       return res.ok({ body: { ok: true, resp } });
     } catch (err) {
+      // If the alerts index doesn't exist yet (no alerts created), return empty result
+      if (isIndexNotFoundError(err)) {
+        return res.ok({ 
+          body: { 
+            ok: true, 
+            resp: { alerts: [], totalAlerts: 0 } 
+          } 
+        });
+      }
       console.error('Alerting - MonitorService - alertsForMonitorsV2:', err);
       return res.ok({ body: { ok: false, resp: err.message } });
     }
@@ -119,10 +148,23 @@ export default class MonitorService extends MDSEnabledClientService {
      if (Number.isFinite(Number(ifPrimaryTerm))) qs.append('if_primary_term', String(ifPrimaryTerm));
      const path = `/_plugins/_alerting/v2/monitors/${encodeURIComponent(id)}${qs.toString() ? `?${qs}` : ''}`;
 
+     // Clean backend-managed fields from PPL monitor payload
+     let cleanedBody = req.body;
+     if (req.body?.ppl_monitor) {
+       const { enabled_time, schema_version, last_update_time, user, id: monitorId, ...cleanMonitor } = req.body.ppl_monitor;
+       
+       // Also clean backend-managed fields from triggers
+       if (Array.isArray(cleanMonitor.triggers)) {
+         cleanMonitor.triggers = cleanMonitor.triggers.map(({ id, last_triggered_time, ...trigger }) => trigger);
+       }
+       
+       cleanedBody = { ppl_monitor: cleanMonitor };
+     }
+
      const resp = await client('transport.request', {
        method: 'PUT',
        path,
-       body: req.body,
+       body: cleanedBody,
        headers: DEFAULT_HEADERS,
      });
       return res.ok({ body: { ok: true, resp } });
@@ -344,36 +386,29 @@ export default class MonitorService extends MDSEnabledClientService {
   deleteMonitor = async (context, req, res) => {
     try {
       const { id } = req.params;
-      console.log("id: ", id);
+      console.log("Deleting monitor id: ", id);
       const client = this.getClientBasedOnDataSource(context, req);
 
-      // Try v2 first, fall back to legacy only if it's available
-      try {
-        const v2 = await client('alerting.deletePPLMonitor', { id });
-        console.log("delete api called. req:", v2);
-        return res.ok({ body: { ok: true, resp: v2 } });
-      } catch (e) {
-        if (!isNoHandlerError(e)) {
-          // v2 exists but not this id => try legacy
-          try {
-            const resp = await client('alerting.deleteMonitor', { monitorId: id });
-            return res.ok({
-              body: { ok: resp.result === 'deleted' || resp.result === undefined, resp },
-            });
-          } catch (e2) {
-            if (isNoHandlerError(e2)) {
-              // neither endpoint exists
-              return res.ok({ body: { ok: false, resp: 'Alerting endpoints not available' } });
-            }
-            throw e2;
-          }
-        }
-        // v2 handler missing entirely
-        return res.ok({ body: { ok: false, resp: e.message } });
-      }
+      // Use the v2 DELETE API as specified
+      const resp = await client('transport.request', {
+        method: 'DELETE',
+        path: `/_plugins/_alerting/v2/monitors/${encodeURIComponent(id)}`,
+        headers: DEFAULT_HEADERS,
+      });
+      
+      console.log("v2 delete succeeded:", resp);
+      
+      // v2 API returns 204 No Content on success
+      return res.ok({ body: { ok: true, resp } });
     } catch (err) {
-      console.error('Alerting - MonitorService - deleteMonitor:', err);
-      return res.ok({ body: { ok: false, resp: err.message } });
+      console.error('Alerting - MonitorService - deleteMonitor error:', err);
+      
+      // Check if it's a 404 (monitor doesn't exist)
+      if (err.statusCode === 404 || err.body?.status === 404) {
+        return res.ok({ body: { ok: false, resp: 'Monitor not found' } });
+      }
+      
+      return res.ok({ body: { ok: false, resp: err.message || err.toString() } });
     }
   };
 
@@ -609,7 +644,20 @@ export default class MonitorService extends MDSEnabledClientService {
       
       // Route to v2 update if payload is v2/PPL
       if (isV2MonitorPayload(req.body)) {
-        const resp = await client('alerting.updatePPLMonitor', { id, body: req.body });
+        // Clean backend-managed fields from PPL monitor payload
+        let cleanedBody = req.body;
+        if (req.body?.ppl_monitor) {
+          const { enabled_time, schema_version, last_update_time, user, ...cleanMonitor } = req.body.ppl_monitor;
+          
+          // Also clean backend-managed fields from triggers
+          if (Array.isArray(cleanMonitor.triggers)) {
+            cleanMonitor.triggers = cleanMonitor.triggers.map(({ id, last_triggered_time, ...trigger }) => trigger);
+          }
+          
+          cleanedBody = { ppl_monitor: cleanMonitor };
+        }
+        
+        const resp = await client('alerting.updatePPLMonitor', { id, body: cleanedBody });
         console.log("resp: ", resp);
         const { _version, _id } = resp || {};
         return res.ok({ body: { ok: true, version: _version, id: _id || id } });

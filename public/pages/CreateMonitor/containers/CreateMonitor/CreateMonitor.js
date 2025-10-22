@@ -952,11 +952,18 @@ class CreateMonitor extends Component {
     // Validation limits (in minutes)
     const LIMITS = {
       lookback: { min: 1, max: 43200 }, // 1 min to 30 days
+      interval: { min: 1, max: 43200 }, // 1 min to 30 days
     };
 
     // Calculate total minutes for validation
     const lbMinutes = lbUnit === 'minutes' ? lbAmount : lbUnit === 'hours' ? lbAmount * 60 : lbAmount * 1440;
-    const lbError = lbMinutes < LIMITS.lookback.min || lbMinutes > LIMITS.lookback.max;
+    const lbError = lbAmount !== '' && (lbMinutes < LIMITS.lookback.min || lbMinutes > LIMITS.lookback.max);
+    
+    // Calculate interval validation
+    const intervalAmount = Number(values.period?.interval ?? 1);
+    const intervalUnit = values.period?.unit || 'MINUTES';
+    const intervalMinutes = intervalUnit === 'MINUTES' ? intervalAmount : intervalUnit === 'HOURS' ? intervalAmount * 60 : intervalAmount * 1440;
+    const intervalError = intervalAmount !== '' && (intervalMinutes < LIMITS.interval.min || intervalMinutes > LIMITS.interval.max);
 
     const LookBackControls = (
       <>
@@ -1002,11 +1009,10 @@ class CreateMonitor extends Component {
                 <EuiFlexItem>
                   <EuiFieldNumber
                     data-test-subj="pplLookBackAmount"
-                    min={1}
-                    value={lbAmount}
+                    value={lbAmount === 0 ? '' : lbAmount}
                     onChange={(e) => {
-                      const val = Number(e.target.value);
-                      if (val >= 1) setFieldValue('lookBackAmount', val);
+                      const val = e.target.value === '' ? '' : Number(e.target.value);
+                      setFieldValue('lookBackAmount', val);
                     }}
                     fullWidth
                     isInvalid={lbError}
@@ -1081,15 +1087,24 @@ class CreateMonitor extends Component {
 
         {values.frequency === 'interval' && (
           <>
-            <EuiFormRow label="Run every" fullWidth style={{ marginLeft: '-6px', maxWidth: '720px' }}>
+            <EuiFormRow 
+              label="Run every" 
+              fullWidth 
+              style={{ marginLeft: '-6px', maxWidth: '720px' }}
+              isInvalid={intervalError}
+              error={intervalError ? 'Must be between 1 minute and 30 days' : undefined}
+            >
               <EuiFlexGroup gutterSize="s" alignItems="center" responsive={false}>
                 <EuiFlexItem>
                   <EuiFieldNumber
                     data-test-subj="pplIntervalValue"
-                    min={1}
-                    value={values.period?.interval ?? 1}
-                    onChange={(e) => setFieldValue('period.interval', Number(e.target.value) || 1)}
+                    value={values.period?.interval === 0 ? '' : (values.period?.interval ?? 1)}
+                    onChange={(e) => {
+                      const val = e.target.value === '' ? '' : Number(e.target.value);
+                      setFieldValue('period.interval', val);
+                    }}
                     fullWidth
+                    isInvalid={intervalError}
                   />
                 </EuiFlexItem>
                 <EuiFlexItem>
