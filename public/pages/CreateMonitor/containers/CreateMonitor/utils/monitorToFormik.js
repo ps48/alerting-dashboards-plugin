@@ -73,6 +73,10 @@ export default function monitorToFormik(monitorIn) {
     }
   };
 
+  // Extract PPL-specific fields if present
+  const pplQuery = monitor.query || '';
+  const timestampField = monitor.timestamp_field || '@timestamp';
+
   return {
     /* INITIALIZE WITH DEFAULTS */
     ...formikValues,
@@ -94,6 +98,10 @@ export default function monitorToFormik(monitorIn) {
     timezone: timezone ? [{ label: timezone }] : [],
     detectorId: isAD ? _.get(inputs, INPUTS_DETECTOR_ID) : undefined,
     adResultIndex: isAD ? _.get(inputs, '0.search.indices.0') : undefined,
+
+    /* PPL-specific fields */
+    ...(pplQuery ? { pplQuery } : {}),
+    ...(monitor.timestamp_field ? { timestampField } : {}),
   };
 }
 

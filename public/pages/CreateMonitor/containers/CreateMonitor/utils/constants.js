@@ -65,6 +65,7 @@ export const FORMIK_INITIAL_VALUES = {
   },
   index: [],
   timeField: '',
+  timestampField: '@timestamp', // <-- timestamp field for PPL look back window
   query: MATCH_ALL_QUERY,
   queries: [],
   description: '',

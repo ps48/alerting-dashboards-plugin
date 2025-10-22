@@ -452,61 +452,91 @@ const formikPplTriggerToWire = (t, i = 0) => {
     return 'info';
   };
 
-  const unitCode = (u) => {
-    const v = String(u || '').toLowerCase();
-    if (v.startsWith('minute')) return 'm';
-    if (v.startsWith('hour')) return 'h';
-    if (v.startsWith('day')) return 'd';
-    // default to minutes if unknown
-    return 'm';
-  };
-
-  const packDur = (val, unit) => {
-    let n = Number(val);
-    if (!Number.isFinite(n) || n <= 0) return null;
-    const u = String(unit || '').toLowerCase();
-    if (u.startsWith('second')) {
-      n = Math.max(1, Math.ceil(n / 60));
-      return `${n}m`;
-    }
-    return `${n}${unitCode(unit)}`;
-  };
-
-  const normalizeDuration = (raw) => {
+  // Convert duration to long integer MINUTES for throttle/expires fields
+  const durationToMinutes = (raw) => {
     if (!raw) return null;
-    if (typeof raw === 'string') return raw.trim();
-    if (typeof raw === 'object') return packDur(raw.value, raw.unit);
+    
+    // If it's already a number, assume it's minutes
+    if (typeof raw === 'number') {
+      return Number.isFinite(raw) && raw > 0 ? Math.floor(raw) : null;
+    }
+    
+    // If it's a string like "5m", "7d", parse it
+    if (typeof raw === 'string') {
+      const match = raw.trim().match(/^(\d+)\s*([smhd]?)$/i);
+      if (match) {
+        const val = Number(match[1]);
+        const unit = (match[2] || 'm').toLowerCase();
+        
+        if (unit === 's') return Math.max(1, Math.ceil(val / 60));
+        if (unit === 'm') return Math.floor(val);
+        if (unit === 'h') return Math.floor(val * 60);
+        if (unit === 'd') return Math.floor(val * 60 * 24);
+      }
+      return null;
+    }
+    
+    // If it's an object with {value, unit}
+    if (typeof raw === 'object' && raw.value) {
+      const val = Number(raw.value);
+      if (!Number.isFinite(val) || val <= 0) return null;
+      
+      const unit = String(raw.unit || 'minutes').toLowerCase();
+      if (unit.startsWith('minute')) return Math.floor(val);
+      if (unit.startsWith('hour')) return Math.floor(val * 60);
+      if (unit.startsWith('day')) return Math.floor(val * 60 * 24);
+      return Math.floor(val); // default to minutes
+    }
+    
     return null;
   };
 
   const type = (t?.uiConditionType || t?.type || t?.conditionType || 'number_of_results').toLowerCase();
   const isNum = type === 'number_of_results';
 
-  const suppress = normalizeDuration(t?.suppress);
-  const expires = normalizeDuration(t?.expires ?? t?.queryLevelTrigger?.expires);
+  const throttle = durationToMinutes(t?.suppress ?? t?.throttle);
+  const expires = durationToMinutes(t?.expires ?? t?.queryLevelTrigger?.expires);
 
-  return {
+  // Clean up actions to only include required fields for PPL v2
+  const cleanActions = (actions) => {
+    if (!Array.isArray(actions)) return [];
+    return actions.map(a => ({
+      name: a.name,
+      destination_id: a.destination_id,
+      message_template: a.message_template,
+      ...(a.subject_template ? { subject_template: a.subject_template } : {}),
+    }));
+  };
+
+  const trigger = {
     name: t?.name || `trigger${i + 1}`,
     severity: normalizeSeverity(t?.severity),
-    actions: Array.isArray(t?.actions) ? t.actions : [],
+    actions: cleanActions(t?.actions),
     mode: (t?.mode || 'result_set').toLowerCase(), // 'result_set' | 'per_result'
     type, // 'number_of_results' | 'custom'
     num_results_condition: isNum ? normalizeNumCondition(t?.num_results_condition || t?.thresholdEnum) : null,
     num_results_value: isNum ? Number(t?.num_results_value ?? t?.thresholdValue ?? 1) : null,
     custom_condition: !isNum ? (t?.custom_condition || t?.customCondition || null) : null,
-    suppress,
-    ...(expires ? { expires } : {}),
-    last_triggered_time: null,
   };
+
+  // Add optional fields only if they have values (long integers in minutes)
+  if (throttle !== null) {
+    trigger.throttle = throttle;
+  }
+  if (expires !== null) {
+    trigger.expires = expires;
+  }
+
+  return trigger;
 };
 
 /**
  * Build the Monitor V2 (PPL) payload expected by backend.
- * Shape: { "ppl_monitor": { ... } }
+ * Shape: { "ppl_monitor": { name, enabled, schedule, query, triggers, look_back_window?, timestamp_field? } }
  */
 export const buildPPLMonitorFromFormik = (values) => {
   const schedule = pplToV2Schedule(values);
-  const lookBack = buildLookBackFromFormik(values); // null if disabled
+  const lookBack = buildLookBackFromFormik(values); // returns integer in minutes or null
 
   const defs = Array.isArray(values.triggerDefinitions) ? values.triggerDefinitions : [];
   const triggers = defs.length
@@ -521,41 +551,149 @@ export const buildPPLMonitorFromFormik = (values) => {
           num_results_condition: '>=',
           num_results_value: 1,
           custom_condition: null,
-          suppress: null,
-          expires: '7d',
-          last_triggered_time: null,
+          expires: 10080, // 7 days in minutes
         },
       ];
 
+  const monitor = {
+    name: values.name || 'Untitled monitor',
+    enabled: !values.disabled,
+    schedule,
+    query: values.pplQuery || '',
+    triggers,
+  };
+
+  // Add look_back_window and timestamp_field together (both required)
+  if (lookBack && values.timestampField) {
+    monitor.look_back_window = lookBack;
+    monitor.timestamp_field = values.timestampField;
+  }
+
+  // Wrap in ppl_monitor object
   return {
-    ppl_monitor: {
-      name: values.name || 'Untitled monitor',
-      enabled: !values.disabled,
-      schedule,
-      ...(lookBack ? { look_back_window: lookBack } : {}), // <- apply for ALL schedule types
-      triggers,
-      query_language: 'ppl',
-      query: values.pplQuery || '',
-    },
+    ppl_monitor: monitor,
   };
 };
 
 
-/** Build compact look back window string from Formik values, e.g. "15m" */
+/** Build look back window as long integer MINUTES from Formik values */
 const buildLookBackFromFormik = (values) => {
   const enabled = values?.useLookBackWindow ?? true;
   if (!enabled) return null;
+  
   const n = Number(values?.lookBackAmount ?? 1);
   const amt = Number.isFinite(n) && n > 0 ? Math.floor(n) : 1;
   const unit = String(values?.lookBackUnit || 'hours').toLowerCase();
-  const suffix = unit.startsWith('second')
-    ? 's'
-    : unit.startsWith('minute')
-    ? 'm'
-    : unit.startsWith('hour')
-    ? 'h'
-    : 'd';
-  return `${amt}${suffix}`;
+  
+  // Convert to minutes (long integer)
+  if (unit.startsWith('minute')) return Math.floor(amt);
+  if (unit.startsWith('hour')) return Math.floor(amt * 60);
+  if (unit.startsWith('day')) return Math.floor(amt * 60 * 24);
+  
+  // Default to minutes
+  return Math.floor(amt);
+};
+
+/**
+ * Extract index names from a PPL query using regex.
+ * Regex: source(?:\s*)=(?:\s*)([-\w.*'+]+(?:\*)?(?:\s*,\s*[-\w.*'+]+\*?)*)\s*\|*
+ * Returns array of index names or empty array if no match.
+ */
+export const extractIndicesFromPPL = (pplQuery) => {
+  if (!pplQuery || typeof pplQuery !== 'string') return [];
+  
+  // Regex to match: source=index1,index2,index3 (case insensitive with 'i' flag)
+  const regex = /source(?:\s*)=(?:\s*)([-\w.*'+]+(?:\*)?(?:\s*,\s*[-\w.*'+]+\*?)*)\s*\|*/i;
+  const match = pplQuery.match(regex);
+  
+  if (!match || !match[1]) return [];
+  
+  // Split by comma and trim each index name
+  const indices = match[1]
+    .split(',')
+    .map((idx) => idx.trim())
+    .filter(Boolean);
+  
+  return indices;
+};
+
+/**
+ * Fetch mappings for given indices and find date fields common to all indices.
+ * Returns { commonDateFields: string[], error: string | null }
+ */
+export const findCommonDateFields = async (httpClient, indices, dataSourceId) => {
+  if (!indices || indices.length === 0) {
+    return { commonDateFields: [], error: 'No indices specified' };
+  }
+
+  try {
+    const dataSourceQuery = getDataSourceQueryObj();
+    const query = { ...(dataSourceQuery?.query || {}) };
+    if (dataSourceId) query['dataSourceId'] = dataSourceId;
+
+    const resp = await httpClient.post('../api/alerting/_mappings', {
+      body: JSON.stringify({ index: indices }),
+      query,
+    });
+
+    if (!resp.ok) {
+      return { commonDateFields: [], error: resp.resp || 'Failed to fetch mappings' };
+    }
+
+    const mappings = resp.resp || {};
+    
+    // Extract date fields from each index
+    const dateFieldsByIndex = [];
+    
+    for (const indexName of Object.keys(mappings)) {
+      const indexMapping = mappings[indexName];
+      const properties = indexMapping?.mappings?.properties || {};
+      const dateFields = [];
+      
+      // Recursively find all date fields
+      const findDateFields = (props, prefix = '') => {
+        for (const [fieldName, fieldDef] of Object.entries(props)) {
+          const fullFieldName = prefix ? `${prefix}.${fieldName}` : fieldName;
+          
+          if (fieldDef.type === 'date') {
+            dateFields.push(fullFieldName);
+          }
+          
+          // Check nested properties
+          if (fieldDef.properties) {
+            findDateFields(fieldDef.properties, fullFieldName);
+          }
+        }
+      };
+      
+      findDateFields(properties);
+      dateFieldsByIndex.push(new Set(dateFields));
+    }
+
+    // Find common date fields present in ALL indices
+    if (dateFieldsByIndex.length === 0) {
+      return { commonDateFields: [], error: null };
+    }
+
+    const commonFields = Array.from(dateFieldsByIndex[0]).filter((field) =>
+      dateFieldsByIndex.every((fieldSet) => fieldSet.has(field))
+    );
+
+    // Sort to prioritize @timestamp
+    commonFields.sort((a, b) => {
+      if (a === '@timestamp') return -1;
+      if (b === '@timestamp') return 1;
+      return a.localeCompare(b);
+    });
+
+    return { commonDateFields: commonFields, error: null };
+  } catch (err) {
+    console.error('[findCommonDateFields] Error:', err);
+    return { 
+      commonDateFields: [], 
+      error: err?.body?.message || err?.message || 'Failed to fetch mappings' 
+    };
+  }
 };
 
 

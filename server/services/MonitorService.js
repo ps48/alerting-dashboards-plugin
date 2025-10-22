@@ -468,10 +468,20 @@ export default class MonitorService extends MDSEnabledClientService {
 
         const hit = _.get(search, 'hits.hits[0]');
         if (hit) {
-          const monitor = (hit._source?.monitor || hit._source) ?? {};
+          let monitor = (hit._source?.monitor || hit._source) ?? {};
           const version = hit._version;
           const ifSeqNo = hit._seq_no;
           const ifPrimaryTerm = hit._primary_term;
+
+          // Extract PPL monitor if present (nested in monitor_v2.ppl_monitor)
+          const pplMonitor = monitor?.monitor_v2?.ppl_monitor || monitor?.ppl_monitor;
+          if (pplMonitor) {
+            monitor = {
+              ...monitor,
+              ...pplMonitor, // Spread PPL monitor fields to top level
+              monitor_v2: monitor.monitor_v2, // Preserve original nested structure
+            };
+          }
 
           // Default for v2 docs
           if (!monitor.monitor_type) monitor.monitor_type = 'query_level';
@@ -704,10 +714,21 @@ export default class MonitorService extends MDSEnabledClientService {
         } = result;
 
         // v2 wraps under _source.monitor; legacy is flat
-        const monitor = _source?.monitor ? _source.monitor : _source || {};
+        let monitor = _source?.monitor ? _source.monitor : _source || {};
+
+        // Extract PPL monitor if present (nested in monitor_v2.ppl_monitor)
+        const pplMonitor = monitor?.monitor_v2?.ppl_monitor || monitor?.ppl_monitor;
+        if (pplMonitor) {
+          // Use the nested PPL monitor data but keep the wrapper for compatibility
+          monitor = {
+            ...monitor,
+            ...pplMonitor, // Spread PPL monitor fields to top level
+            monitor_v2: monitor.monitor_v2, // Preserve original nested structure
+          };
+        }
 
         // ------- Normalize for UI -------
-        // v2 docs don’t have monitor_type; the UI expects it to render the Type column.
+        // v2 docs don't have monitor_type; the UI expects it to render the Type column.
         if (!monitor.monitor_type) {
           monitor.monitor_type = 'query_level';
         }

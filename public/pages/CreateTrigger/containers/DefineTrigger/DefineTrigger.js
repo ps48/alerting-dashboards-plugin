@@ -433,7 +433,6 @@ class DefineTrigger extends Component {
 
     const { pluginsLoading } = this.props;
     const hasNotificationPlugin = !pluginsLoading && plugins?.indexOf(OS_NOTIFICATION_PLUGIN) !== -1;
-    console.log('[DefineTrigger] Checking notification plugin. pluginsLoading:', pluginsLoading, 'plugins:', plugins, 'hasNotificationPlugin:', hasNotificationPlugin);
 
     // Legacy context still uses executeResponse; PPL path uses graphResponse directly
     const ctxExec = executeResponse ?? this.props.executeResponse;
@@ -626,7 +625,7 @@ class DefineTrigger extends Component {
         );
     }
 
-    // Suppress / Expires
+    // Throttle / Expires (renamed from Suppress)
     const suppressEnabled =
       _.get(triggerValues, `${fieldPath}suppressEnabled`) === true ||
       _.get(triggerValues, `${fieldPath}suppress?.enabled`) === true;
@@ -637,7 +636,7 @@ class DefineTrigger extends Component {
           {({ field, form }) => (
             <EuiCheckbox
               id={`${fieldPath}__suppressEnabled`}
-              label="Suppress"
+              label="Throttle"
               checked={!!field.value}
               onChange={(e) => {
                 const checked = e.target.checked;
@@ -688,42 +687,47 @@ class DefineTrigger extends Component {
 
           <EuiSpacer size="l" />
 
-          {/* Suppress */}
+          {/* Throttle (renamed from Suppress) */}
           {suppressToggle}
           {suppressEnabled && (
             <>
-              {/* <EuiSpacer size="s" />
-              <div style={{ paddingLeft: GRID_PAD, maxWidth: SUPPRESS_TEXT_MAX }}>
-                <FormikFieldText
-                  name={`${fieldPath}suppress.fieldValue`}
-                  formRow
-                  rowProps={{ label: 'Suppress results containing field value', fullWidth: true, style: { paddingLeft: 0 } }}
-                  inputProps={{ placeholder: 'field value', fullWidth: true }}
-                />
-              </div>
-              <EuiSpacer size="s" /> */}
-              <EuiFlexGroup gutterSize="s" style={{ paddingLeft: GRID_PAD, maxWidth: GRID_MAX }} alignItems="flexEnd">
-                <EuiFlexItem>
-                  <FormikFieldText
-                    name={`${fieldPath}suppress.value`}
-                    formRow
-                    rowProps={{ label: 'Suppress for', fullWidth: true, style: { paddingLeft: 0 } }}
-                    inputProps={{ type: 'number', min: 1, fullWidth: true }}
-                  />
-                </EuiFlexItem>
-                <EuiFlexItem>
-                  <FormikSelect
-                    name={`${fieldPath}suppress.unit`}
-                    formRow
-                    rowProps={{ hasEmptyLabelSpace: true, fullWidth: true, style: { paddingLeft: 0 } }}
-                    inputProps={{ options: [
-                      { value: 'minutes', text: 'minute(s)' },
-                      { value: 'hours', text: 'hour(s)' },
-                      { value: 'days', text: 'day(s)' },
-                    ], fullWidth: true }}
-                  />
-                </EuiFlexItem>
-              </EuiFlexGroup>
+              {(() => {
+                const throttleVal = Number(_.get(triggerValues, `${fieldPath}suppress.value`, 1));
+                const throttleUnit = _.get(triggerValues, `${fieldPath}suppress.unit`, 'minutes');
+                const throttleMinutes = throttleUnit === 'minutes' ? throttleVal : throttleUnit === 'hours' ? throttleVal * 60 : throttleVal * 1440;
+                const throttleError = throttleMinutes < 1 || throttleMinutes > 7200;
+                
+                return (
+                  <EuiFlexGroup gutterSize="s" style={{ paddingLeft: GRID_PAD, maxWidth: GRID_MAX }} alignItems="flexEnd">
+                    <EuiFlexItem>
+                      <FormikFieldText
+                        name={`${fieldPath}suppress.value`}
+                        formRow
+                        rowProps={{ 
+                          label: 'Throttle for', 
+                          fullWidth: true, 
+                          style: { paddingLeft: 0 },
+                          isInvalid: throttleError,
+                          error: throttleError ? 'Must be between 1 minute and 5 days' : undefined
+                        }}
+                        inputProps={{ type: 'number', min: 1, fullWidth: true, isInvalid: throttleError }}
+                      />
+                    </EuiFlexItem>
+                    <EuiFlexItem>
+                      <FormikSelect
+                        name={`${fieldPath}suppress.unit`}
+                        formRow
+                        rowProps={{ hasEmptyLabelSpace: true, fullWidth: true, style: { paddingLeft: 0 } }}
+                        inputProps={{ options: [
+                          { value: 'minutes', text: 'minute(s)' },
+                          { value: 'hours', text: 'hour(s)' },
+                          { value: 'days', text: 'day(s)' },
+                        ], fullWidth: true }}
+                      />
+                    </EuiFlexItem>
+                  </EuiFlexGroup>
+                );
+              })()}
             </>
           )}
 
@@ -733,24 +737,39 @@ class DefineTrigger extends Component {
             <EuiText size="xs" style={{ fontWeight: 'bold' }}>
               <span>Expires</span>
             </EuiText>
-            <EuiFlexGroup gutterSize="s" alignItems="flexEnd" style={{ marginTop: 0 }}>
-              <EuiFlexItem>
-                <FormikFieldText
-                  name={`${fieldPath}expires.value`}
-                  inputProps={{ type: 'number', min: 1, fullWidth: true }}
-                />
-              </EuiFlexItem>
-              <EuiFlexItem>
-                <FormikSelect
-                  name={`${fieldPath}expires.unit`}
-                  inputProps={{ options: [
-                    { value: 'minutes', text: 'minute(s)' },
-                    { value: 'hours', text: 'hour(s)' },
-                    { value: 'days', text: 'day(s)' },
-                  ], fullWidth: true }}
-                />
-              </EuiFlexItem>
-            </EuiFlexGroup>
+            {(() => {
+              const expiresVal = Number(_.get(triggerValues, `${fieldPath}expires.value`, 1));
+              const expiresUnit = _.get(triggerValues, `${fieldPath}expires.unit`, 'days');
+              const expiresMinutes = expiresUnit === 'minutes' ? expiresVal : expiresUnit === 'hours' ? expiresVal * 60 : expiresVal * 1440;
+              const expiresError = expiresMinutes < 1 || expiresMinutes > 43200;
+              
+              return (
+                <EuiFlexGroup gutterSize="s" alignItems="flexEnd" style={{ marginTop: 0 }}>
+                  <EuiFlexItem>
+                    <FormikFieldText
+                      name={`${fieldPath}expires.value`}
+                      formRow
+                      rowProps={{
+                        isInvalid: expiresError,
+                        error: expiresError ? 'Must be between 1 minute and 30 days' : undefined,
+                        hasEmptyLabelSpace: true
+                      }}
+                      inputProps={{ type: 'number', min: 1, fullWidth: true, isInvalid: expiresError }}
+                    />
+                  </EuiFlexItem>
+                  <EuiFlexItem>
+                    <FormikSelect
+                      name={`${fieldPath}expires.unit`}
+                      inputProps={{ options: [
+                        { value: 'minutes', text: 'minute(s)' },
+                        { value: 'hours', text: 'hour(s)' },
+                        { value: 'days', text: 'day(s)' },
+                      ], fullWidth: true }}
+                    />
+                  </EuiFlexItem>
+                </EuiFlexGroup>
+              );
+            })()}
           </div>
 
           {/* Notifications */}

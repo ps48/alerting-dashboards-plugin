@@ -58,6 +58,8 @@ import {
   submit,
   runPPLPreview,
   submitPPL,
+  extractIndicesFromPPL,
+  findCommonDateFields,
 } from './utils/helpers';
 import {
   getPerformanceModal,
@@ -100,6 +102,7 @@ class CreateMonitor extends Component {
       useLookBackWindow: baseInitial.useLookBackWindow ?? true,
       lookBackAmount: baseInitial.lookBackAmount ?? 1,
       lookBackUnit: baseInitial.lookBackUnit || 'hours',
+      timestampField: baseInitial.timestampField || '@timestamp',
     };
     try {
       const params = new URLSearchParams(location?.search || '');
@@ -242,6 +245,9 @@ class CreateMonitor extends Component {
       showOpenQueryFlyout: false,
       showSavedQueryManager: false,
       indices: [],
+      availableDateFields: [],
+      dateFieldsLoading: false,
+      dateFieldsError: null,
     };
   }
 
@@ -276,6 +282,73 @@ class CreateMonitor extends Component {
     } catch (e) {
       console.error('[CreateMonitor] Error fetching indices:', e);
       this.setState({ indices: [] });
+    }
+  };
+
+  // Detect and auto-populate timestamp fields from PPL query
+  detectTimestampFields = async (pplQuery) => {
+    const { httpClient, landingDataSourceId } = this.props;
+    
+    // Extract indices from PPL query
+    const indices = extractIndicesFromPPL(pplQuery);
+    
+    if (indices.length === 0) {
+      this.setState({
+        availableDateFields: [],
+        dateFieldsError: 'No indices found in query',
+        dateFieldsLoading: false,
+      });
+      return;
+    }
+
+    this.setState({ dateFieldsLoading: true, dateFieldsError: null });
+
+    try {
+      const dataSourceId =
+        this.formikRef.current?.values?.dataSourceId || landingDataSourceId;
+      
+      const { commonDateFields, error } = await findCommonDateFields(
+        httpClient,
+        indices,
+        dataSourceId
+      );
+
+      if (error) {
+        this.setState({
+          availableDateFields: [],
+          dateFieldsError: error,
+          dateFieldsLoading: false,
+        });
+        return;
+      }
+
+      if (commonDateFields.length === 0) {
+        this.setState({
+          availableDateFields: [],
+          dateFieldsError: 'No common date fields found across all indices',
+          dateFieldsLoading: false,
+        });
+        return;
+      }
+
+      // Auto-populate with the first field (prioritized to be @timestamp)
+      const defaultField = commonDateFields[0];
+      if (this.formikRef.current) {
+        this.formikRef.current.setFieldValue('timestampField', defaultField, false);
+      }
+
+      this.setState({
+        availableDateFields: commonDateFields,
+        dateFieldsError: null,
+        dateFieldsLoading: false,
+      });
+    } catch (err) {
+      console.error('[detectTimestampFields] Error:', err);
+      this.setState({
+        availableDateFields: [],
+        dateFieldsError: err?.message || 'Failed to detect timestamp fields',
+        dateFieldsLoading: false,
+      });
     }
   };
 
@@ -364,27 +437,19 @@ class CreateMonitor extends Component {
   async componentDidMount() {
     const { httpClient, landingDataSourceId } = this.props;
 
-    console.log('[CreateMonitor] componentDidMount - landingDataSourceId:', landingDataSourceId);
-
     // Set data source before making any API calls that use getDataSourceQueryObj()
     // Initialize with empty object if landingDataSourceId is not available yet
     if (landingDataSourceId) {
-      console.log('[CreateMonitor] Setting data source with ID:', landingDataSourceId);
       setDataSource({ dataSourceId: landingDataSourceId });
     } else {
-      console.log('[CreateMonitor] No landingDataSourceId yet, setting empty data source');
       // Initialize with empty/null to prevent "DataSource was not set" error
       setDataSource({ dataSourceId: undefined });
     }
 
     const updatePlugins = async () => {
-      console.log('[CreateMonitor] Starting to fetch plugins...');
       try {
         const newPlugins = await getPlugins(httpClient);
-        console.log('[CreateMonitor] Fetched plugins:', newPlugins);
-        this.setState({ plugins: newPlugins, pluginsLoading: false }, () => {
-          console.log('[CreateMonitor] State updated with plugins:', this.state.plugins);
-        });
+        this.setState({ plugins: newPlugins, pluginsLoading: false });
       } catch (error) {
         console.error('[CreateMonitor] Error fetching plugins:', error);
         // Set pluginsLoading to false even on error so UI doesn't get stuck
@@ -395,12 +460,16 @@ class CreateMonitor extends Component {
     updatePlugins();
     this.setSchedule();
     this.fetchInitialIndices();
+
+    // Detect timestamp fields from initial PPL query if present
+    const initialPplQuery = this.formikRef.current?.values?.pplQuery;
+    if (initialPplQuery) {
+      this.detectTimestampFields(initialPplQuery);
+    }
   }
 
   componentDidUpdate(prevProps) {
     if (isDataSourceChanged(prevProps, this.props)) {
-      console.log('[CreateMonitor] Data source changed from', prevProps.landingDataSourceId, 'to', this.props.landingDataSourceId);
-      
       // Update the data source service
       if (this.props.landingDataSourceId) {
         setDataSource({ dataSourceId: this.props.landingDataSourceId });
@@ -414,11 +483,9 @@ class CreateMonitor extends Component {
       
       // Refetch plugins with new data source
       const updatePlugins = async () => {
-        console.log('[CreateMonitor] Refetching plugins after data source change...');
         this.setState({ pluginsLoading: true });
         try {
           const newPlugins = await getPlugins(this.props.httpClient);
-          console.log('[CreateMonitor] Refetched plugins:', newPlugins);
           this.setState({ plugins: newPlugins, pluginsLoading: false });
         } catch (error) {
           console.error('[CreateMonitor] Error refetching plugins:', error);
@@ -479,29 +546,39 @@ class CreateMonitor extends Component {
           break;
       }
 
-      // hydrate look_back_window if present
+      // hydrate look_back_window if present (integer in minutes)
       const lbw =
         monitorToEdit?.look_back_window ||
         monitorToEdit?.ppl_monitor?.look_back_window ||
         null;
-      if (typeof lbw === 'string' && lbw.trim()) {
-        const match = lbw.trim().match(/^(\d+)\s*([smhd])$/i);
-        if (match) {
-          const amount = Number(match[1]);
-          const unitShort = match[2].toLowerCase();
-          const unit =
-            unitShort === 's'
-              ? 'seconds'
-              : unitShort === 'm'
-              ? 'minutes'
-              : unitShort === 'h'
-              ? 'hours'
-              : 'days';
+      if (lbw) {
+        const minutes = Number(lbw);
+        if (Number.isFinite(minutes) && minutes > 0) {
           _.set(initialValues, 'useLookBackWindow', true);
-          _.set(initialValues, 'lookBackAmount', Number.isFinite(amount) ? amount : 1);
-          _.set(initialValues, 'lookBackUnit', unit);
+          
+          // Convert minutes to best fitting unit
+          if (minutes >= 1440 && minutes % 1440 === 0) {
+            // Days
+            _.set(initialValues, 'lookBackAmount', minutes / 1440);
+            _.set(initialValues, 'lookBackUnit', 'days');
+          } else if (minutes >= 60 && minutes % 60 === 0) {
+            // Hours
+            _.set(initialValues, 'lookBackAmount', minutes / 60);
+            _.set(initialValues, 'lookBackUnit', 'hours');
+          } else {
+            // Minutes
+            _.set(initialValues, 'lookBackAmount', minutes);
+            _.set(initialValues, 'lookBackUnit', 'minutes');
+          }
         }
       }
+
+      // hydrate timestamp_field if present
+      const tsField =
+        monitorToEdit?.timestamp_field ||
+        monitorToEdit?.ppl_monitor?.timestamp_field ||
+        '@timestamp';
+      _.set(initialValues, 'timestampField', tsField);
     }
   };
 
@@ -675,6 +752,11 @@ class CreateMonitor extends Component {
   // ---- PPL Schedule (unchanged) ----
 
 
+  // Debounced timestamp field detection
+  debouncedDetectTimestampFields = _.debounce((pplQuery) => {
+    this.detectTimestampFields(pplQuery);
+  }, 1000);
+
   renderPplQueryBody = (values, setFieldValue) => (
     <>
       {/* Top row with PPL badge, Saved queries, Run preview, and info icon */}
@@ -820,6 +902,8 @@ class CreateMonitor extends Component {
           value={values.pplQuery || ''}
           onChange={(text) => {
             setFieldValue('pplQuery', text);
+            // Trigger debounced timestamp field detection
+            this.debouncedDetectTimestampFields(text);
           }}
           services={this.context?.services || this.context}
           height={220}
@@ -858,55 +942,121 @@ class CreateMonitor extends Component {
     </>
   );
 
-  // ---- PPL Schedule (unchanged) ----
+  // ---- PPL Schedule ----
   renderPplScheduleBody(values, setFieldValue) {
     const useLB = values.useLookBackWindow !== undefined ? values.useLookBackWindow : true;
     const lbAmount = Number(values.lookBackAmount !== undefined ? values.lookBackAmount : 1);
     const lbUnit = values.lookBackUnit || 'hours';
+    const { availableDateFields, dateFieldsError, dateFieldsLoading } = this.state;
+
+    // Validation limits (in minutes)
+    const LIMITS = {
+      lookback: { min: 1, max: 43200 }, // 1 min to 30 days
+    };
+
+    // Calculate total minutes for validation
+    const lbMinutes = lbUnit === 'minutes' ? lbAmount : lbUnit === 'hours' ? lbAmount * 60 : lbAmount * 1440;
+    const lbError = lbMinutes < LIMITS.lookback.min || lbMinutes > LIMITS.lookback.max;
 
     const LookBackControls = (
       <>
         <EuiFormRow>
           <EuiCheckbox
             id="useLookBackWindow"
-            label="Add look back window"
+            label={
+              <span>
+                Add look back window{' '}
+                <EuiIconTip
+                  type="iInCircle"
+                  content="Look back window specifies how far back in time the monitor should query data during each execution."
+                />
+              </span>
+            }
             checked={useLB}
             onChange={(e) => setFieldValue('useLookBackWindow', e.target.checked)}
             data-test-subj="pplUseLookBack"
+            disabled={dateFieldsError !== null && availableDateFields.length === 0}
           />
         </EuiFormRow>
 
-        {useLB && (
-          <EuiFormRow label="Look back from" fullWidth style={{ marginLeft: '-6px', maxWidth: '720px' }}>
-            <EuiFlexGroup gutterSize="s" alignItems="center" responsive={false}>
-              <EuiFlexItem>
-                <EuiFieldNumber
-                  data-test-subj="pplLookBackAmount"
-                  min={1}
-                  value={lbAmount}
-                  onChange={(e) =>
-                    setFieldValue('lookBackAmount', Math.max(1, Number(e.target.value) || 1))
-                  }
-                  fullWidth
-                />
-              </EuiFlexItem>
+        {dateFieldsError && availableDateFields.length === 0 && (
+          <>
+            <EuiSpacer size="s" />
+            <EuiText size="xs" color="warning">
+              <EuiIconTip type="alert" color="warning" /> {dateFieldsError}. Look back window requires a common timestamp field across all indices.
+            </EuiText>
+            <EuiSpacer size="s" />
+          </>
+        )}
 
-              <EuiFlexItem>
-                <EuiSelect
-                  data-test-subj="pplLookBackUnit"
-                  options={[
-                    { value: 'seconds', text: 'Second(s) ago' },
-                    { value: 'minutes', text: 'Minute(s) ago' },
-                    { value: 'hours', text: 'Hour(s) ago' },
-                    { value: 'days', text: 'Day(s) ago' },
-                  ]}
-                  value={lbUnit}
-                  onChange={(e) => setFieldValue('lookBackUnit', e.target.value)}
-                  fullWidth
-                />
-              </EuiFlexItem>
-            </EuiFlexGroup>
-          </EuiFormRow>
+        {useLB && (
+          <>
+            <EuiFormRow 
+              label="Look back from" 
+              fullWidth 
+              style={{ marginLeft: '-6px', maxWidth: '720px' }}
+              isInvalid={lbError}
+              error={lbError ? `Must be between 1 minute and 30 days` : undefined}
+            >
+              <EuiFlexGroup gutterSize="s" alignItems="center" responsive={false}>
+                <EuiFlexItem>
+                  <EuiFieldNumber
+                    data-test-subj="pplLookBackAmount"
+                    min={1}
+                    value={lbAmount}
+                    onChange={(e) => {
+                      const val = Number(e.target.value);
+                      if (val >= 1) setFieldValue('lookBackAmount', val);
+                    }}
+                    fullWidth
+                    isInvalid={lbError}
+                  />
+                </EuiFlexItem>
+
+                <EuiFlexItem>
+                  <EuiSelect
+                    data-test-subj="pplLookBackUnit"
+                    options={[
+                      { value: 'minutes', text: 'Minute(s) ago' },
+                      { value: 'hours', text: 'Hour(s) ago' },
+                      { value: 'days', text: 'Day(s) ago' },
+                    ]}
+                    value={lbUnit}
+                    onChange={(e) => setFieldValue('lookBackUnit', e.target.value)}
+                    fullWidth
+                  />
+                </EuiFlexItem>
+              </EuiFlexGroup>
+            </EuiFormRow>
+
+            <EuiFormRow
+              label={
+                <span>
+                  Timestamp field{' '}
+                  <EuiIconTip
+                    type="iInCircle"
+                    content="The date field used to filter data within the look back window."
+                  />
+                </span>
+              }
+              fullWidth
+              style={{ marginLeft: '-6px', maxWidth: '720px' }}
+              helpText={dateFieldsLoading ? 'Detecting timestamp fields...' : undefined}
+            >
+              <EuiSelect
+                data-test-subj="pplTimestampField"
+                options={
+                  availableDateFields.length > 0
+                    ? availableDateFields.map((field) => ({ value: field, text: field }))
+                    : [{ value: values.timestampField || '@timestamp', text: values.timestampField || '@timestamp' }]
+                }
+                value={values.timestampField || '@timestamp'}
+                onChange={(e) => setFieldValue('timestampField', e.target.value)}
+                fullWidth
+                isLoading={dateFieldsLoading}
+              />
+            </EuiFormRow>
+          </>
         )}
       </>
     );
