@@ -73,8 +73,6 @@ import { QueryEditor } from '../../../../components/QueryEditor';
 import { AlertingDataTable } from '../../../../components/DataTable';
 import {
   SavedQueryManagementComponent,
-  SaveQueryFlyout,
-  OpenSavedQueryFlyout,
 } from '../../../../../../../src/plugins/data/public';
 import { setDataSource } from '../../../../services';
 
@@ -239,11 +237,7 @@ class CreateMonitor extends Component {
       showRaw: false,
       queryLibOpen: false,
       previewOpen: false,
-      savedQMenuOpen: false,
-      savingInline: false, 
-      showSaveQueryFlyout: false,
-      showOpenQueryFlyout: false,
-      showSavedQueryManager: false,
+      savedQueriesPopoverOpen: false,
       indices: [],
       availableDateFields: [],
       dateFieldsLoading: false,
@@ -384,10 +378,12 @@ class CreateMonitor extends Component {
   handleSaveQuery = async (meta, saveAsNew = false) => {
     const svc = this.getSavedQueryService();
     const toasts = this.getNotifications()?.toasts;
+    
     if (!svc) {
       toasts?.addWarning('Saved query service is not available.');
       return;
     }
+
     const pplQuery = this.formikRef.current?.values?.pplQuery || '';
     const attributes = {
       title: meta.title,
@@ -399,12 +395,9 @@ class CreateMonitor extends Component {
     };
 
     try {
-      this.setState({ savingInline: true });
       await svc.saveQuery(attributes, { overwrite: !saveAsNew });
       toasts?.addSuccess(`Your query "${attributes.title}" was saved`);
-      this.setState({ savingInline: false, showSavedQueryManager: false });
     } catch (err) {
-      this.setState({ savingInline: false });
       toasts?.addDanger(
         (err && err.message) ? `Failed to save query: ${err.message}` : 'Failed to save query.'
       );
@@ -419,19 +412,7 @@ class CreateMonitor extends Component {
     } else if (q != null) {
       this.formikRef.current?.setFieldValue('pplQuery', JSON.stringify(q, null, 2));
     }
-    this.setState({
-      showSavedQueryManager: false,
-      showSaveQueryFlyout: false,
-      showOpenQueryFlyout: false,
-    });
-  };
-
-  handleClearSavedQuery = () => {
-    this.setState({
-      showSavedQueryManager: false,
-      showSaveQueryFlyout: false,
-      showOpenQueryFlyout: false,
-    });
+    this.setState({ savedQueriesPopoverOpen: false });
   };
 
   async componentDidMount() {
@@ -787,69 +768,41 @@ class CreateMonitor extends Component {
             
             <EuiFlexItem grow={false}>
               <EuiPopover
-                isOpen={this.state.savedQMenuOpen}
-                closePopover={() =>
-                  this.setState({
-                    savedQMenuOpen: false,
-                    showSavedQueryManager: false,
-                    showSaveQueryFlyout: false,
-                    showOpenQueryFlyout: false,
-                  })
-                }
+                isOpen={this.state.savedQueriesPopoverOpen}
+                closePopover={() => this.setState({ savedQueriesPopoverOpen: false })}
                 anchorPosition="downLeft"
                 panelPaddingSize="none"
                 button={
                   <EuiButtonEmpty
                     size="s"
-                    iconType={this.state.savedQMenuOpen ? 'arrowUp' : 'arrowDown'}
-                    iconSide="right"                    
-                    onClick={() =>
-                      this.setState((s) => ({
-                        savedQMenuOpen: !s.savedQMenuOpen,
-                        showSavedQueryManager: !s.savedQMenuOpen ? true : s.showSavedQueryManager,
-                        showSaveQueryFlyout: false,
-                        showOpenQueryFlyout: false,
-                      }))
-                    }
+                    iconType={this.state.savedQueriesPopoverOpen ? 'arrowUp' : 'arrowDown'}
+                    iconSide="right"
+                    onClick={() => this.setState((s) => ({ savedQueriesPopoverOpen: !s.savedQueriesPopoverOpen }))}
                     data-test-subj="savedQueriesButton"
                   >
                     Saved queries
                   </EuiButtonEmpty>
                 }
               >
-                {this.state.showSavedQueryManager && (
-                  <div
-                    style={{
-                      width: 200,
-                      maxWidth: '60vw',
-                      padding: 8,
-                      maxHeight: 200,
-                      overflow: 'auto',
-                    }}
-                    className="eui-yScroll"
-                  >
-                    <SavedQueryManagementComponent
-                      savedQueryService={this.getSavedQueryService()}
-                      onLoad={this.handleLoadSavedQuery}
-                      onClearSavedQuery={this.handleClearSavedQuery}
-                      showSaveQuery={
-                        typeof this.state.showSaveQueryFlyout === 'boolean'
-                          ? this.state.showSaveQueryFlyout
-                          : undefined
-                      }
-                      saveQuery={this.handleSaveQuery}
-                      useNewSavedQueryUI={true}
-                      closeMenuPopover={() =>
-                        this.setState({
-                          savedQMenuOpen: false,
-                          showSavedQueryManager: false,
-                          showSaveQueryFlyout: false,
-                          showOpenQueryFlyout: false,
-                        })
-                      }
-                    />
-                  </div>
-                )}
+                <div
+                  style={{
+                    width: 200,
+                    maxWidth: '60vw',
+                    padding: 8,
+                  }}
+                >
+                  <SavedQueryManagementComponent
+                    savedQueryService={this.getSavedQueryService()}
+                    onLoad={this.handleLoadSavedQuery}
+                    onClearSavedQuery={() => this.setState({ savedQueriesPopoverOpen: false })}
+                    showSaveQuery={false}
+                    saveQuery={this.handleSaveQuery}
+                    useNewSavedQueryUI={true}
+                    closeMenuPopover={() => this.setState({ savedQueriesPopoverOpen: false })}
+                    onInitiateSave={() => {}}
+                    onInitiateSaveAsNew={() => {}}
+                  />
+                </div>
               </EuiPopover>
             </EuiFlexItem>
           </EuiFlexGroup>
