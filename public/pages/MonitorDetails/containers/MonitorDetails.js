@@ -591,6 +591,7 @@ export default class MonitorDetails extends Component {
           delegateMonitors={delegateMonitors}
           updateMonitor={this.updateMonitor}
         />
+        {/* TODO: History section commented out - may need to re-add later
         <div className="eui-hideFor--xs eui-hideFor--s eui-hideFor--m">
           <EuiSpacer />
           <MonitorHistory
@@ -603,6 +604,7 @@ export default class MonitorDetails extends Component {
             monitorType={displayMonitor.monitor_type}
           />
         </div>
+        */}
         <EuiSpacer />
 
         {displayTableTabs ? (
