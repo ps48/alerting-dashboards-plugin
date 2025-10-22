@@ -951,19 +951,19 @@ class CreateMonitor extends Component {
 
     // Validation limits (in minutes)
     const LIMITS = {
-      lookback: { min: 1, max: 43200 }, // 1 min to 30 days
-      interval: { min: 1, max: 43200 }, // 1 min to 30 days
+      lookback: { min: 1 }, // minimum 1 minute
+      interval: { min: 1 }, // minimum 1 minute
     };
 
     // Calculate total minutes for validation
     const lbMinutes = lbUnit === 'minutes' ? lbAmount : lbUnit === 'hours' ? lbAmount * 60 : lbAmount * 1440;
-    const lbError = lbAmount !== '' && (lbMinutes < LIMITS.lookback.min || lbMinutes > LIMITS.lookback.max);
+    const lbError = lbAmount !== '' && lbMinutes < LIMITS.lookback.min;
     
     // Calculate interval validation
     const intervalAmount = Number(values.period?.interval ?? 1);
     const intervalUnit = values.period?.unit || 'MINUTES';
     const intervalMinutes = intervalUnit === 'MINUTES' ? intervalAmount : intervalUnit === 'HOURS' ? intervalAmount * 60 : intervalAmount * 1440;
-    const intervalError = intervalAmount !== '' && (intervalMinutes < LIMITS.interval.min || intervalMinutes > LIMITS.interval.max);
+    const intervalError = intervalAmount !== '' && intervalMinutes < LIMITS.interval.min;
 
     const LookBackControls = (
       <>
@@ -1003,7 +1003,7 @@ class CreateMonitor extends Component {
               fullWidth 
               style={{ marginLeft: '-6px', maxWidth: '720px' }}
               isInvalid={lbError}
-              error={lbError ? `Must be between 1 minute and 30 days` : undefined}
+              error={lbError ? `Must be at least 1 minute` : undefined}
             >
               <EuiFlexGroup gutterSize="s" alignItems="center" responsive={false}>
                 <EuiFlexItem>
@@ -1092,7 +1092,7 @@ class CreateMonitor extends Component {
               fullWidth 
               style={{ marginLeft: '-6px', maxWidth: '720px' }}
               isInvalid={intervalError}
-              error={intervalError ? 'Must be between 1 minute and 30 days' : undefined}
+              error={intervalError ? 'Must be at least 1 minute' : undefined}
             >
               <EuiFlexGroup gutterSize="s" alignItems="center" responsive={false}>
                 <EuiFlexItem>

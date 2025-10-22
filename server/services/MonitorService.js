@@ -88,19 +88,7 @@ export default class MonitorService extends MDSEnabledClientService {
     try {
       const client = this.getClientBasedOnDataSource(context, req);
       
-      // Build query string from request query params
-      const queryParams = req.query || {};
-      const qs = new URLSearchParams();
-      
-      // Pass through all relevant query parameters
-      if (queryParams.monitorIds) {
-        const ids = Array.isArray(queryParams.monitorIds) 
-          ? queryParams.monitorIds.join(',')
-          : String(queryParams.monitorIds);
-        qs.append('monitorIds', ids);
-      }
-      
-      const path = `/_plugins/_alerting/v2/monitors/alerts${qs.toString() ? `?${qs}` : ''}`;
+      const path = `/_plugins/_alerting/v2/monitors/alerts`;
       
       const resp = await client('transport.request', {
         method: 'GET',

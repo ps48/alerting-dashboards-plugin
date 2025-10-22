@@ -25,7 +25,7 @@ import {
   MONITOR_TYPE,
   OPENSEARCH_DASHBOARDS_AD_PLUGIN,
 } from '../../../utils/constants';
-import { acknowledgeAlerts, backendErrorNotification } from '../../../utils/helpers';
+import { backendErrorNotification } from '../../../utils/helpers';
 import {
   getInitialSize,
   getQueryObjectFromState,
@@ -35,7 +35,6 @@ import {
 } from '../utils/helpers';
 import { DEFAULT_PAGE_SIZE_OPTIONS } from '../../Monitors/containers/Monitors/utils/constants';
 import { MAX_ALERT_COUNT } from '../utils/constants';
-import AcknowledgeAlertsModal from '../components/AcknowledgeAlertsModal';
 import { getAlertsFindingColumn } from '../components/FindingsDashboard/findingsUtils';
 import { ChainedAlertDetailsFlyout } from '../components/ChainedAlertDetailsFlyout/ChainedAlertDetailsFlyout';
 import { CLUSTER_METRICS_CROSS_CLUSTER_ALERT_TABLE_COLUMN } from '../../CreateMonitor/components/ClusterMetricsMonitor/utils/clusterMetricsMonitorConstants';
@@ -163,11 +162,7 @@ export default class Dashboard extends Component {
       const queryParamsString = queryString.stringify(params);
       const { httpClient, history, notifications, perAlertView } = this.props;
       history.replace({ ...this.props.location, search: queryParamsString });
-      const serverQuery = {};
-      if (dataSourceId !== undefined) serverQuery.dataSourceId = dataSourceId;
-      if (Array.isArray(monitorIds) && monitorIds.length) serverQuery.monitorIds = monitorIds;
-
-      httpClient.get('../api/alerting/v2/monitors/alerts', { query: serverQuery }).then((resp) => {
+      httpClient.get('../api/alerting/v2/monitors/alerts').then((resp) => {
         if (resp.ok) {
           const payload = resp.resp || resp;
           let rawAlerts = [];
@@ -177,10 +172,14 @@ export default class Dashboard extends Component {
           if (Array.isArray(payload?.alertV2s)) {
             rawAlerts = payload.alertV2s.map((a) => ({
               ...a,
-              monitor_id: a.monitor_id,
+              monitor_id: a.monitor_v2_id,
               // v2 provides monitor_version; keep a stable "version" key for itemId
-              version: a.monitor_version ?? a.version,
-              monitorVersion: a.monitor_version,
+              version: a.monitor_v2_version ?? a.version,
+              monitorVersion: a.monitor_v2_version,
+              // Map v2 fields to expected column fields
+              start_time: a.triggered_time,
+              trigger_name: a.trigger_v2_name,
+              end_time: a.expiration_time,
               // v2 may not include a state; default to ACTIVE so filters/selection work
               state: a.state || 'ACTIVE',
             }));
@@ -205,6 +204,13 @@ export default class Dashboard extends Component {
             );
             totalFromServer =
               payload.total_alerts ?? payload.totalAlerts ?? rawAlerts.length;
+          }
+
+          // Filter by monitor IDs if specified
+          if (Array.isArray(monitorIds) && monitorIds.length) {
+            rawAlerts = rawAlerts.filter((alert) => 
+              monitorIds.includes(alert.monitor_id)
+            );
           }
 
           // ---- Client-side filter/search/sort/paginate ----
@@ -605,25 +611,11 @@ export default class Dashboard extends Component {
 
     const selection = {
       onSelectionChange: this.onSelectionChange,
-      selectable: perAlertView
-        ? (item) => item.state === ALERT_STATE.ACTIVE
-        : (item) => item.ACTIVE > 0,
-      selectableMessage: perAlertView
-        ? (selectable) => (selectable ? undefined : 'Only active alerts can be acknowledged.')
-        : (selectable) =>
-            selectable ? undefined : 'Only triggers with active alerts can be acknowledged.',
+      selectable: () => false, // Disable selection since acknowledge is removed
     };
 
     const actions = () => {
-      const actions = [
-        <EuiSmallButton
-          onClick={perAlertView ? this.acknowledgeAlert : this.openModal}
-          disabled={perAlertView ? !selectedItems.length : selectedItems.length !== 1}
-          data-test-subj={'acknowledgeAlertsButton'}
-        >
-          Acknowledge
-        </EuiSmallButton>,
-      ];
+      const actions = [];
 
       if (!perAlertView) {
         const alert = selectedItems[0];
