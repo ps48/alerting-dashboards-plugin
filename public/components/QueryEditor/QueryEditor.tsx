@@ -57,24 +57,11 @@ export const QueryEditor: React.FC<QueryEditorProps> = ({
   const isDatasetInitialized = useRef(false);
   useEffect(() => {
     const initializeDataset = async () => {
-      console.log('[QueryEditor Dataset Init] ========== START ==========');
-      console.log('[QueryEditor Dataset Init] Already initialized?', isDatasetInitialized.current);
-      
       if (isDatasetInitialized.current) {
-        console.log('[QueryEditor Dataset Init] Already initialized, skipping');
         return;
       }
       
-      console.log('[QueryEditor Dataset Init] Services check:', {
-        servicesExists: !!services,
-        dataExists: !!services?.data,
-        dataViewsExists: !!services?.data?.dataViews,
-        queryExists: !!services?.data?.query,
-        queryStringExists: !!services?.data?.query?.queryString,
-      });
-      
       if (!services?.data?.dataViews || !services?.data?.query?.queryString) {
-        console.warn('[QueryEditor Dataset Init] Required services not available, aborting');
         return;
       }
 
@@ -83,43 +70,31 @@ export const QueryEditor: React.FC<QueryEditorProps> = ({
         
         // Check if dataset already set
         const existingQuery = data.query.queryString.getQuery();
-        console.log('[QueryEditor Dataset Init] Existing query:', existingQuery);
         
         if (existingQuery?.dataset) {
-          console.log('[QueryEditor Dataset Init] Dataset already exists:', existingQuery.dataset);
           dispatch(setDataset(existingQuery.dataset));
           isDatasetInitialized.current = true;
           return;
         }
-
-        console.log('[QueryEditor Dataset Init] No existing dataset, initializing...');
 
         // IMPORTANT: Set language to 'ppl' FIRST to avoid toast notification
         // This ensures that when we set the dataset, the current language is already 'ppl'
         data.query.queryString.setQuery({
           language: 'ppl',
         });
-        console.log('[QueryEditor Dataset Init] Set language to ppl');
 
         // Fetch first available index pattern
         const indexPatterns = await data.dataViews.getIdsWithTitle();
-        console.log('[QueryEditor Dataset Init] Available index patterns:', indexPatterns?.length || 0);
-        if (indexPatterns && indexPatterns.length > 0) {
-          console.log('[QueryEditor Dataset Init] First 3 patterns:', indexPatterns.slice(0, 3));
-        }
 
         let dataset = null;
 
+        const indexPatternId = indexPatternIdRef.current;
+        const indices = indicesRef.current || [];
+
         if (indexPatterns && indexPatterns.length > 0) {
           const firstPattern = indexPatterns[0];
-          console.log('[QueryEditor Dataset Init] Using first pattern:', firstPattern);
           
           const dataView = await data.dataViews.get(firstPattern.id);
-          console.log('[QueryEditor Dataset Init] DataView loaded:', {
-            id: dataView.id,
-            title: dataView.title,
-            timeFieldName: dataView.timeFieldName,
-          });
           
           dataset = {
             id: dataView.id,
@@ -127,18 +102,10 @@ export const QueryEditor: React.FC<QueryEditorProps> = ({
             type: DEFAULT_DATA.SET_TYPES.INDEX_PATTERN,
             timeFieldName: dataView.timeFieldName,
           };
-        } else if (indices.length > 0) {
-          console.log('[QueryEditor Dataset Init] No index patterns, creating from indices:', indices);
-          
+        } else if (indices && indices.length > 0) {
           const dataView = await data.dataViews.create({
             title: indices.join(','),
           }, false, true);
-          
-          console.log('[QueryEditor Dataset Init] Created dataView:', {
-            id: dataView.id,
-            title: dataView.title,
-            timeFieldName: dataView.timeFieldName,
-          });
           
           dataset = {
             id: dataView.id!,
@@ -146,13 +113,9 @@ export const QueryEditor: React.FC<QueryEditorProps> = ({
             type: DEFAULT_DATA.SET_TYPES.INDEX_PATTERN,
             timeFieldName: dataView.timeFieldName,
           };
-        } else {
-          console.warn('[QueryEditor Dataset Init] WARNING: No index patterns or indices available!');
         }
 
         if (dataset) {
-          console.log('[QueryEditor Dataset Init] Setting dataset in queryString service:', dataset);
-          
           // THIS IS THE KEY: Set dataset in queryString service like explore does
           // Set the language to 'ppl' directly in the query to avoid language change toast
           data.query.queryString.setQuery({
@@ -163,17 +126,9 @@ export const QueryEditor: React.FC<QueryEditorProps> = ({
 
           dispatch(setDataset(dataset));
           isDatasetInitialized.current = true;
-          console.log('[QueryEditor Dataset Init] Dataset initialization complete!');
-        } else {
-          console.error('[QueryEditor Dataset Init] FAILED: No dataset could be created');
         }
-        
-        console.log('[QueryEditor Dataset Init] ========== END ==========');
       } catch (error) {
-        console.error('[QueryEditor Dataset Init] ========== ERROR ==========');
-        console.error('[QueryEditor Dataset Init] Error initializing dataset:', error);
-        console.error('[QueryEditor Dataset Init] Error stack:', (error as Error)?.stack);
-        console.error('[QueryEditor Dataset Init] =============================');
+        // Silent fail - dataset initialization is not critical
       }
     };
 
@@ -190,30 +145,14 @@ export const QueryEditor: React.FC<QueryEditorProps> = ({
         context: monaco.languages.CompletionContext,
         token: monaco.CancellationToken
       ): Promise<monaco.languages.CompletionList> => {
-        console.log('[QueryEditor Autocomplete] ========== START ==========');
-        console.log('[QueryEditor Autocomplete] Trigger character:', context.triggerCharacter);
-        console.log('[QueryEditor Autocomplete] Trigger kind:', context.triggerKind);
-        console.log('[QueryEditor Autocomplete] Position:', position.lineNumber, position.column);
-        
         if (token.isCancellationRequested) {
-          console.log('[QueryEditor Autocomplete] Token cancelled, aborting');
           return { suggestions: [], incomplete: false };
         }
 
         try {
           const currentServices = servicesRef.current;
-          
-          console.log('[QueryEditor Autocomplete] Services check:');
-          console.log('  - currentServices exists:', !!currentServices);
-          console.log('  - currentServices.data exists:', !!currentServices?.data);
-          console.log('  - currentServices.data.dataViews exists:', !!currentServices?.data?.dataViews);
-          console.log('  - currentServices.data.query exists:', !!currentServices?.data?.query);
-          console.log('  - currentServices.data.query.queryString exists:', !!currentServices?.data?.query?.queryString);
-          console.log('  - currentServices.data.autocomplete exists:', !!currentServices?.data?.autocomplete);
-          console.log('  - currentServices.data.autocomplete.getQuerySuggestions exists:', !!currentServices?.data?.autocomplete?.getQuerySuggestions);
 
           if (!currentServices?.data?.autocomplete?.getQuerySuggestions) {
-            console.error('[QueryEditor Autocomplete] CRITICAL: autocomplete.getQuerySuggestions is not available!');
             return { suggestions: [], incomplete: false };
           }
 
@@ -223,23 +162,14 @@ export const QueryEditor: React.FC<QueryEditorProps> = ({
           
           // CRITICAL FIX: PPL provider requires services.appName!
           if (!currentServices.appName) {
-            console.log('[QueryEditor Autocomplete] Setting appName to "alerting"');
             currentServices.appName = 'alerting';
           }
 
           // Use PPL directly - don't use getEffectiveLanguageForAutoComplete for alerting
           const effectiveLanguage = queryLanguage === 'ppl' ? 'PPL' : queryLanguage;
-          console.log('[QueryEditor Autocomplete] Effective language:', effectiveLanguage);
-          console.log('[QueryEditor Autocomplete] Query language from redux:', queryLanguage);
 
           // Get dataset from queryString service - EXACTLY like explore does
           const currentDataset = queryString.getQuery().dataset;
-          console.log('[QueryEditor Autocomplete] Current dataset:', currentDataset);
-          
-          if (!currentDataset) {
-            console.warn('[QueryEditor Autocomplete] WARNING: No dataset found in queryString service!');
-            console.log('[QueryEditor Autocomplete] Full query object:', queryString.getQuery());
-          }
           
           let currentDataView = null;
           if (currentDataset?.id) {
@@ -248,31 +178,16 @@ export const QueryEditor: React.FC<QueryEditorProps> = ({
                 currentDataset.id,
                 currentDataset.type !== DEFAULT_DATA.SET_TYPES.INDEX_PATTERN
               );
-              console.log('[QueryEditor Autocomplete] DataView loaded:', {
-                id: currentDataView?.id,
-                title: currentDataView?.title,
-                timeFieldName: currentDataView?.timeFieldName,
-                fields: currentDataView?.fields?.length,
-              });
             } catch (dvError) {
-              console.error('[QueryEditor Autocomplete] Error loading dataView:', dvError);
+              // Silent fail - continue without dataView
             }
-          } else {
-            console.warn('[QueryEditor Autocomplete] No dataset ID, skipping dataView load');
           }
 
           const queryValue = model.getValue();
           const offset = model.getOffsetAt(position);
-          
-          console.log('[QueryEditor Autocomplete] Calling getQuerySuggestions with:');
-          console.log('  - query:', queryValue);
-          console.log('  - selectionStart/End:', offset);
-          console.log('  - language:', effectiveLanguage);
-          console.log('  - indexPattern exists:', !!currentDataView);
-          console.log('  - datasetType:', currentDataset?.type);
 
           // Call autocomplete exactly like discover/explore does
-          const suggestions = await currentServices?.data?.autocomplete?.getQuerySuggestions({
+          let suggestions = await currentServices?.data?.autocomplete?.getQuerySuggestions({
             query: queryValue,
             selectionStart: offset,
             selectionEnd: offset,
@@ -283,9 +198,22 @@ export const QueryEditor: React.FC<QueryEditorProps> = ({
             services: currentServices as any,
           });
 
-          console.log('[QueryEditor Autocomplete] Suggestions returned:', suggestions?.length || 0);
-          if (suggestions && suggestions.length > 0) {
-            console.log('[QueryEditor Autocomplete] First 3 suggestions:', suggestions.slice(0, 3).map((s: any) => s.text));
+          // Fallback: Provide basic PPL keywords when no dataset/indexPattern is available
+          if ((!suggestions || suggestions.length === 0) && !currentDataView && effectiveLanguage === 'PPL') {
+            suggestions = [
+              { text: 'source', type: 2, insertText: 'source = ', detail: 'Keyword' },
+              { text: 'where', type: 2, insertText: 'where ', detail: 'Keyword' },
+              { text: 'fields', type: 2, insertText: 'fields ', detail: 'Keyword' },
+              { text: 'rename', type: 2, insertText: 'rename ', detail: 'Keyword' },
+              { text: 'stats', type: 2, insertText: 'stats ', detail: 'Keyword' },
+              { text: 'dedup', type: 2, insertText: 'dedup ', detail: 'Keyword' },
+              { text: 'sort', type: 2, insertText: 'sort ', detail: 'Keyword' },
+              { text: 'eval', type: 2, insertText: 'eval ', detail: 'Keyword' },
+              { text: 'head', type: 2, insertText: 'head ', detail: 'Keyword' },
+              { text: 'top', type: 2, insertText: 'top ', detail: 'Keyword' },
+              { text: 'rare', type: 2, insertText: 'rare ', detail: 'Keyword' },
+              { text: 'parse', type: 2, insertText: 'parse ', detail: 'Keyword' },
+            ];
           }
 
           // current completion item range being given as last 'word' at pos
@@ -320,18 +248,11 @@ export const QueryEditor: React.FC<QueryEditorProps> = ({
             },
           }));
 
-          console.log('[QueryEditor Autocomplete] Converted to Monaco suggestions:', monacoSuggestions.length);
-          console.log('[QueryEditor Autocomplete] ========== END ==========');
-
           return {
             suggestions: monacoSuggestions,
             incomplete: false,
           };
         } catch (autocompleteError) {
-          console.error('[QueryEditor Autocomplete] ========== ERROR ==========');
-          console.error('[QueryEditor Autocomplete] Error details:', autocompleteError);
-          console.error('[QueryEditor Autocomplete] Error stack:', (autocompleteError as Error)?.stack);
-          console.error('[QueryEditor Autocomplete] =============================');
           return { suggestions: [], incomplete: false };
         }
       },

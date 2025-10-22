@@ -348,20 +348,12 @@ class CreateMonitor extends Component {
 
   getSavedQueryService = () => {
     try {
-      console.log('context unchanged:', this.context);
-
       const services =
         (this.context && (this.context.services || this.context)) || undefined;
-      console.log('context.services:', services);
 
       const data = services?.data;
-      console.log('services.data:', data);
-
       const query = data?.query;
-      console.log('services.data.query:', query);
-
       const savedQueries = query?.savedQueries;
-      console.log('services.data.query.savedQueries:', savedQueries);
 
       return savedQueries;
     } catch (e) {
@@ -417,6 +409,21 @@ class CreateMonitor extends Component {
 
   async componentDidMount() {
     const { httpClient, landingDataSourceId } = this.props;
+
+    // Initialize query in queryString service to prevent "Query was not set" errors
+    try {
+      const services = (this.context && (this.context.services || this.context)) || undefined;
+      const queryString = services?.data?.query?.queryString;
+      if (queryString) {
+        // Initialize with empty PPL query
+        queryString.setQuery({
+          query: '',
+          language: 'ppl',
+        });
+      }
+    } catch (e) {
+      // Silent fail - not critical
+    }
 
     // Set data source before making any API calls that use getDataSourceQueryObj()
     // Initialize with empty object if landingDataSourceId is not available yet
