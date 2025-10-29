@@ -37,10 +37,10 @@ export default function getScheduleFromMonitor(monitor) {
       if (frequency === 'interval' && interval && unit) {
         return `Every ${interval} ${unit.toLowerCase()}`;
       }
-      if (frequency === 'daily' && daily && timezone) {
+      if (frequency === 'daily' && typeof daily === 'number' && timezone) {
         return `Every day around ${moment.tz(timezone).hours(daily).minutes(0).format('h:mm a z')}`;
       }
-      if (frequency === 'weekly' && weekly && daily && timezone) {
+      if (frequency === 'weekly' && weekly && typeof daily === 'number' && timezone) {
         const daysOfWeek = Object.entries(weekly)
           .filter(([day, checked]) => checked)
           .map(([day]) => day);
@@ -57,7 +57,7 @@ export default function getScheduleFromMonitor(monitor) {
           .minutes(0)
           .format('h:mm a z')}`;
       }
-      if (frequency === 'monthly' && day && daily && timezone) {
+      if (frequency === 'monthly' && day && typeof daily === 'number' && timezone) {
         return `Every month on the ${moment(day, 'DD').format('Do')} around ${moment
           .tz(timezone)
           .hours(daily)

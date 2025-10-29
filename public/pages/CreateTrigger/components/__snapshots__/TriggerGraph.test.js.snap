@@ -8,6 +8,11 @@ exports[`TriggerGraph renders 1`] = `
     }
   }
 >
+  <Field
+    name="undefinedthresholdValue"
+  >
+    <Component />
+  </Field>
   <TriggerExpressions
     keyFieldName="undefinedthresholdEnum"
     label="Trigger condition"
@@ -16,8 +21,54 @@ exports[`TriggerGraph renders 1`] = `
   <EuiSpacer
     size="m"
   />
-  <VisualGraph
-    annotation={true}
+  <AlertingVisualGraph
+    key="0"
+    onMaxYValueCalculated={[Function]}
+    response={
+      Object {
+        "aggregations": Object {
+          "combined_value": Object {
+            "buckets": Array [
+              Object {
+                "doc_count": 0,
+                "key": 1761774603555,
+              },
+            ],
+          },
+          "count_over_time": Object {
+            "buckets": Array [
+              Object {
+                "doc_count": 0,
+                "key": 1761774603555,
+              },
+            ],
+          },
+          "date_histogram": Object {
+            "buckets": Array [
+              Object {
+                "doc_count": 0,
+                "key": 1761774603555,
+              },
+            ],
+          },
+          "ppl_histogram": Object {
+            "buckets": Array [
+              Object {
+                "doc_count": 0,
+                "key": 1761774603555,
+              },
+            ],
+          },
+        },
+        "hits": Object {
+          "total": Object {
+            "relation": "eq",
+            "value": 1,
+          },
+        },
+      }
+    }
+    services={Object {}}
   />
 </div>
 `;

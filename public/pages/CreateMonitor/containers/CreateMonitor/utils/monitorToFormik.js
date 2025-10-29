@@ -15,6 +15,9 @@ import { conditionToExpressions } from '../../../../CreateTrigger/utils/helper';
 
 // Convert Monitor JSON to Formik values used in UI forms
 export default function monitorToFormik(monitorIn) {
+  const formikValues = _.cloneDeep(FORMIK_INITIAL_VALUES);
+  if (!monitorIn) return formikValues;
+  
   // Accept v2 wrappers transparently (try both camelCase and snake_case)
   const monitor =
     monitorIn?.monitor_v2?.ppl_monitor ||
@@ -22,8 +25,7 @@ export default function monitorToFormik(monitorIn) {
     monitorIn?.ppl_monitor ||
     monitorIn ||
     {};
-  const formikValues = _.cloneDeep(FORMIK_INITIAL_VALUES);
-  if (!monitor) return formikValues;
+  if (!monitor || Object.keys(monitor).length === 0) return formikValues;
   
   // Parse schedule - handle both cron and period schedules
   let cronExpression = formikValues.cronExpression;
