@@ -310,6 +310,10 @@ class CreateMonitor extends Component {
         dateFieldsError: 'No indices found in query',
         dateFieldsLoading: false,
       });
+      // Automatically disable lookback window when no indices
+      if (this.formikRef.current) {
+        this.formikRef.current.setFieldValue('useLookBackWindow', false, false);
+      }
       return;
     }
 
@@ -331,6 +335,10 @@ class CreateMonitor extends Component {
           dateFieldsError: error,
           dateFieldsLoading: false,
         });
+        // Automatically disable lookback window when no valid date fields
+        if (this.formikRef.current) {
+          this.formikRef.current.setFieldValue('useLookBackWindow', false, false);
+        }
         return;
       }
 
@@ -340,6 +348,10 @@ class CreateMonitor extends Component {
           dateFieldsError: 'No common date fields found across all indices',
           dateFieldsLoading: false,
         });
+        // Automatically disable lookback window when no valid date fields
+        if (this.formikRef.current) {
+          this.formikRef.current.setFieldValue('useLookBackWindow', false, false);
+        }
         return;
       }
 
@@ -361,6 +373,10 @@ class CreateMonitor extends Component {
         dateFieldsError: err?.message || 'Failed to detect timestamp fields',
         dateFieldsLoading: false,
       });
+      // Automatically disable lookback window on error
+      if (this.formikRef.current) {
+        this.formikRef.current.setFieldValue('useLookBackWindow', false, false);
+      }
     }
   };
 
@@ -957,8 +973,15 @@ class CreateMonitor extends Component {
                 />
               </span>
             }
-            checked={useLB}
-            onChange={(e) => setFieldValue('useLookBackWindow', e.target.checked)}
+            checked={useLB && !(dateFieldsError && availableDateFields.length === 0)}
+            onChange={(e) => {
+              // Only allow enabling if there are valid date fields
+              if (dateFieldsError && availableDateFields.length === 0) {
+                setFieldValue('useLookBackWindow', false);
+              } else {
+                setFieldValue('useLookBackWindow', e.target.checked);
+              }
+            }}
             data-test-subj="pplUseLookBack"
             disabled={dateFieldsError !== null && availableDateFields.length === 0}
           />
@@ -974,7 +997,7 @@ class CreateMonitor extends Component {
           </>
         )}
 
-        {useLB && (
+        {useLB && !(dateFieldsError && availableDateFields.length === 0) && (
           <>
             <EuiFormRow 
               label="Look back from" 
