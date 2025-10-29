@@ -15,6 +15,9 @@ import {
   EuiFlexItem,
   EuiPagination,
   EuiFlexGroup,
+  EuiButtonGroup,
+  EuiSpacer,
+  EuiTitle,
 } from '@elastic/eui';
 import ContentPanel from '../../../components/ContentPanel';
 import DashboardEmptyPrompt from '../components/DashboardEmptyPrompt';
@@ -25,7 +28,7 @@ import {
   MONITOR_TYPE,
   OPENSEARCH_DASHBOARDS_AD_PLUGIN,
 } from '../../../utils/constants';
-import { backendErrorNotification } from '../../../utils/helpers';
+import { acknowledgeAlerts, backendErrorNotification } from '../../../utils/helpers';
 import {
   getInitialSize,
   getQueryObjectFromState,
@@ -35,6 +38,7 @@ import {
 } from '../utils/helpers';
 import { DEFAULT_PAGE_SIZE_OPTIONS } from '../../Monitors/containers/Monitors/utils/constants';
 import { MAX_ALERT_COUNT } from '../utils/constants';
+import AcknowledgeAlertsModal from '../components/AcknowledgeAlertsModal';
 import { getAlertsFindingColumn } from '../components/FindingsDashboard/findingsUtils';
 import { ChainedAlertDetailsFlyout } from '../components/ChainedAlertDetailsFlyout/ChainedAlertDetailsFlyout';
 import { CLUSTER_METRICS_CROSS_CLUSTER_ALERT_TABLE_COLUMN } from '../../CreateMonitor/components/ClusterMetricsMonitor/utils/clusterMetricsMonitorConstants';
@@ -80,6 +84,7 @@ export default class Dashboard extends Component {
       //chainedAlert: undefined,
       commentsEnabled: false,
       isAgentConfigured: false,
+      viewMode: 'new', // 'new' or 'classic'
     };
   }
 
@@ -117,6 +122,10 @@ export default class Dashboard extends Component {
     if (isDataSourceChanged(prevProps, this.props)) {
       this.dataSourceQuery = getDataSourceQueryObj();
       this.getUpdatedAgentConfig();
+      this.getUpdatedAlerts();
+    }
+    // Refresh alerts when view mode changes
+    if (prevState.viewMode !== this.state.viewMode) {
       this.getUpdatedAlerts();
     }
   }
@@ -162,7 +171,18 @@ export default class Dashboard extends Component {
       const queryParamsString = queryString.stringify(params);
       const { httpClient, history, notifications, perAlertView } = this.props;
       history.replace({ ...this.props.location, search: queryParamsString });
-      httpClient.get('../api/alerting/v2/monitors/alerts').then((resp) => {
+      
+      // Call different API based on view mode
+      const { viewMode } = this.state;
+      const apiPath = viewMode === 'classic' 
+        ? '../api/alerting/alerts'        // v1 API for classic view
+        : '../api/alerting/v2/monitors/alerts';  // v2 API for new view
+      
+      const apiParams = viewMode === 'classic'
+        ? { query: { ...params } }  // v1 accepts query params
+        : {};  // v2 doesn't accept query params
+      
+      httpClient.get(apiPath, apiParams).then((resp) => {
         if (resp.ok) {
           const payload = resp.resp || resp;
           let rawAlerts = [];
@@ -502,6 +522,7 @@ export default class Dashboard extends Component {
       totalTriggers,
       commentsEnabled,
       isAgentConfigured,
+      viewMode,  // Extract viewMode early
     } = this.state;
     const {
       monitorIds,
@@ -591,7 +612,8 @@ export default class Dashboard extends Component {
         setFlyout,
         this.openFlyout,
         this.closeFlyout,
-        this.refreshDashboard
+        this.refreshDashboard,
+        viewMode  // Pass viewMode to control column visibility
       );
     }
 
@@ -608,10 +630,19 @@ export default class Dashboard extends Component {
         field: sortField,
       },
     };
-
+    
     const selection = {
       onSelectionChange: this.onSelectionChange,
-      selectable: () => false, // Disable selection since acknowledge is removed
+      selectable: viewMode === 'classic' 
+        ? (perAlertView
+            ? (item) => item.state === ALERT_STATE.ACTIVE
+            : (item) => item.ACTIVE > 0)
+        : () => false, // Disable selection in New mode
+      selectableMessage: viewMode === 'classic'
+        ? (perAlertView
+            ? (selectable) => (selectable ? undefined : 'Only active alerts can be acknowledged.')
+            : (selectable) => (selectable ? undefined : 'Only triggers with active alerts can be acknowledged.'))
+        : undefined,
     };
 
     const actions = () => {
@@ -641,6 +672,19 @@ export default class Dashboard extends Component {
           </EuiSmallButton>
         );
       }
+      
+      // Acknowledge button only in Classic mode
+      if (viewMode === 'classic') {
+        actions.push(
+          <EuiSmallButton
+            onClick={perAlertView ? this.acknowledgeAlert : this.openModal}
+            disabled={perAlertView ? !selectedItems.length : selectedItems.length !== 1}
+            data-test-subj={'acknowledgeAlertsButton'}
+          >
+            Acknowledge
+          </EuiSmallButton>
+        );
+      }
 
       if (detectorIds.length) {
         actions.unshift(
@@ -666,6 +710,17 @@ export default class Dashboard extends Component {
     const useUpdatedUx = !perAlertView && getUseUpdatedUx();
     const shouldShowPagination = !perAlertView && totalAlerts > 0;
 
+    const toggleButtons = [
+      {
+        id: 'new',
+        label: 'New',
+      },
+      {
+        id: 'classic',
+        label: 'Classic',
+      },
+    ];
+
     return (
       <>
         {/* {chainedAlert && (
@@ -681,8 +736,46 @@ export default class Dashboard extends Component {
           bodyStyles={{ padding: 'initial' }}
           actions={useUpdatedUx ? undefined : actions()}
           panelOptions={{ hideTitleBorder: useUpdatedUx }}
-          panelStyles={{ padding: useUpdatedUx && totalAlerts < 1 ? '16px 16px 0px' : '16px' }}
+          panelStyles={{ padding: useUpdatedUx ? '0px' : '16px' }}
         >
+          {useUpdatedUx && (
+            <>
+              <div style={{ padding: '16px 16px 0px 16px' }}>
+                <EuiFlexGroup alignItems="center" justifyContent="spaceBetween" responsive={false}>
+                  <EuiFlexItem grow={false}>
+                    <EuiFlexGroup alignItems="center" gutterSize="m" responsive={false}>
+                      <EuiFlexItem grow={false}>
+                        <EuiTitle size="l">
+                          <h1>Alerts by triggers</h1>
+                        </EuiTitle>
+                      </EuiFlexItem>
+                      <EuiFlexItem grow={false}>
+                        <EuiButtonGroup
+                          legend="Alert view toggle"
+                          options={toggleButtons}
+                          idSelected={viewMode}
+                          onChange={(id) => this.setState({ viewMode: id })}
+                          buttonSize="compressed"
+                          color="text"
+                          isFullWidth={false}
+                        />
+                      </EuiFlexItem>
+                    </EuiFlexGroup>
+                  </EuiFlexItem>
+                  <EuiFlexItem grow={false}>
+                    <EuiFlexGroup gutterSize="s" responsive={false}>
+                      {actions().map((action, idx) => (
+                        <EuiFlexItem key={idx} grow={false}>
+                          {action}
+                        </EuiFlexItem>
+                      ))}
+                    </EuiFlexGroup>
+                  </EuiFlexItem>
+                </EuiFlexGroup>
+              </div>
+              <EuiSpacer size="m" />
+            </>
+          )}
           <DashboardControls
             activePage={page}
             pageCount={Math.ceil(totalItems / size) || 1}
@@ -695,30 +788,34 @@ export default class Dashboard extends Component {
             onPageChange={this.onPageClick}
             isAlertsFlyout={isAlertsFlyout}
             monitorType={monitorType}
-            alertActions={useUpdatedUx ? actions() : undefined}
-            panelStyles={{ padding: perAlertView ? '8px 0px 16px' : '0px 0px 16px' }}
+            alertActions={null}
+            panelStyles={{ padding: perAlertView ? '8px 16px 16px' : '0px 16px 16px' }}
           />
 
-          <EuiBasicTable
-            items={perAlertView ? alerts : alertsByTriggers}
-            itemId={getItemId}
-            columns={columns}
-            pagination={perAlertView ? pagination : undefined}
-            sorting={sorting}
-            isSelectable={true}
-            selection={selection}
-            onChange={this.onTableChange}
-            noItemsMessage={
-              <DashboardEmptyPrompt
-                onCreateTrigger={onCreateTrigger}
-                landingDataSourceId={this.props.landingDataSourceId}
-              />
-            }
-            data-test-subj={'alertsDashboard_table'}
-          />
+          {this.state.showAlertsModal && this.renderModal()}
+
+          <div style={{ padding: useUpdatedUx ? '0px 16px 16px 16px' : '0px' }}>
+            <EuiBasicTable
+              items={perAlertView ? alerts : alertsByTriggers}
+              itemId={getItemId}
+              columns={columns}
+              pagination={perAlertView ? pagination : undefined}
+              sorting={sorting}
+              isSelectable={true}
+              selection={selection}
+              onChange={this.onTableChange}
+              noItemsMessage={
+                <DashboardEmptyPrompt
+                  onCreateTrigger={onCreateTrigger}
+                  landingDataSourceId={this.props.landingDataSourceId}
+                />
+              }
+              data-test-subj={'alertsDashboard_table'}
+            />
+          </div>
 
           {shouldShowPagination && (
-            <EuiFlexGroup justifyContent="flexEnd" style={{ padding: '8px 0px 0px' }}>
+            <EuiFlexGroup justifyContent="flexEnd" style={{ padding: useUpdatedUx ? '8px 16px 0px 16px' : '8px 0px 0px' }}>
               <EuiFlexItem grow={false}>
                 <EuiPagination
                   pageCount={Math.ceil(totalItems / size) || 1}
