@@ -747,23 +747,25 @@ class CreateMonitor extends Component {
         fullWidth
         style={{ marginLeft: '-6px', maxWidth: '720px' }}
       >
-        <EuiTextArea
-          data-test-subj="pplDescription"
-          value={values.description || ''}
-          onChange={(e) => {
-            const value = e.target.value;
-            if (value.length <= 10000) {
-              setFieldValue('description', value);
-            }
-          }}
-          placeholder="Describe the monitor (max 10,000 characters)"
-          fullWidth
-        />
-        {values.description && (
-          <EuiText size="xs" color="subdued" style={{ marginTop: '4px' }}>
-            {values.description.length} / 10,000 characters
-          </EuiText>
-        )}
+        <>
+          <EuiTextArea
+            data-test-subj="pplDescription"
+            value={values.description || ''}
+            onChange={(e) => {
+              const value = e.target.value;
+              if (value.length <= 10000) {
+                setFieldValue('description', value);
+              }
+            }}
+            placeholder="Describe the monitor"
+            fullWidth
+          />
+          {values.description && (
+            <EuiText size="xs" color="subdued" style={{ marginTop: '4px' }}>
+              {values.description.length} / 10,000 characters
+            </EuiText>
+          )}
+        </>
       </EuiFormRow>
 
       <EuiFormRow>
