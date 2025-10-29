@@ -10,16 +10,16 @@ import { ALERT_STATE, DEFAULT_EMPTY_DATA } from '../../../utils/constants';
 import queryString from 'query-string';
 import { GET_ALERTS_SORT_FILTERS } from '../../../../server/services/AlertService';
 
-export function groupAlertsByTrigger(alerts) {
+export function groupAlertsByTrigger(alerts, groupByMonitor = true) {
   if (_.isUndefined(alerts)) return _.cloneDeep(EMPTY_ALERT_LIST.alerts);
   let alertsByTriggers = new Map();
   alerts.map((alert) => {
     const triggerID = alert.trigger_id;
     const monitorID = alert.monitor_id;
     
-    // Create composite key: trigger_id + monitor_id
-    // This ensures alerts are grouped by both trigger AND monitor
-    const compositeKey = `${triggerID}::${monitorID}`;
+    // For v2, create composite key: trigger_id + monitor_id
+    // For v1, use only trigger_id (original behavior)
+    const compositeKey = groupByMonitor ? `${triggerID}::${monitorID}` : triggerID;
     
     const newAlertList = alertsByTriggers.has(compositeKey)
       ? addAlert(alertsByTriggers.get(compositeKey), alert)
@@ -27,8 +27,8 @@ export function groupAlertsByTrigger(alerts) {
     alertsByTriggers.set(compositeKey, newAlertList);
   });
   return Array.from(alertsByTriggers, ([compositeKey, alerts]) => {
-    // Extract triggerID from composite key for backward compatibility
-    const triggerID = compositeKey.split('::')[0];
+    // Extract triggerID from composite key
+    const triggerID = groupByMonitor ? compositeKey.split('::')[0] : compositeKey;
     return { ...alerts, triggerID };
   });
 }

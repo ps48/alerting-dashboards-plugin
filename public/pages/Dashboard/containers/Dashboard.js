@@ -184,117 +184,111 @@ export default class Dashboard extends Component {
       
       httpClient.get(apiPath, apiParams).then((resp) => {
         if (resp.ok) {
-          const payload = resp.resp || resp;
-          let rawAlerts = [];
-          let totalFromServer;
+          if (viewMode === 'classic') {
+            // ========== V1/CLASSIC MODE: Direct server response, no client-side processing ==========
+            const { alerts, totalAlerts } = resp;
+            this.setState({ alerts, totalAlerts });
 
-          // 1) v2: { alertV2s: [...], totalAlertV2s: N }
-          if (Array.isArray(payload?.alertV2s)) {
-            rawAlerts = payload.alertV2s.map((a) => ({
-              ...a,
-              monitor_id: a.monitor_v2_id,
-              monitor_name: a.monitor_v2_name,  // ← Add monitor_name mapping
-              trigger_id: a.trigger_v2_id,       // ← Add trigger_id mapping for grouping
-              // v2 provides monitor_version; keep a stable "version" key for itemId
-              version: a.monitor_v2_version ?? a.version,
-              monitorVersion: a.monitor_v2_version,
-              // Map v2 fields to expected column fields
-              start_time: a.triggered_time,
-              trigger_name: a.trigger_v2_name,
-              end_time: a.expiration_time,
-              // v2 may not include a state; default to ACTIVE so filters/selection work
-              state: a.state || 'ACTIVE',
-            }));
-            totalFromServer = payload.totalAlertV2s ?? rawAlerts.length;
-          } else {
-            // 2) Other shapes we’ve handled previously (monitors[], payload[], or {monitor_id, alerts})
-            const bundles = Array.isArray(payload?.monitors)
-              ? payload.monitors
-              : Array.isArray(payload)
-              ? payload
-              : payload?.monitor_id && Array.isArray(payload?.alerts)
-              ? [payload]
-              : Array.isArray(payload?.alerts)
-              ? [{ monitor_id: undefined, version: undefined, alerts: payload.alerts }]
-              : [];
-            rawAlerts = bundles.flatMap((b) =>
-              (b.alerts || []).map((a) => ({
-                ...a,
-                monitor_id: a.monitor_id ?? b.monitor_id,
-                version: a.version ?? b.version,
-              }))
-            );
-            totalFromServer =
-              payload.total_alerts ?? payload.totalAlerts ?? rawAlerts.length;
-          }
-
-          // Filter by monitor IDs if specified
-          if (Array.isArray(monitorIds) && monitorIds.length) {
-            rawAlerts = rawAlerts.filter((alert) => 
-              monitorIds.includes(alert.monitor_id)
-            );
-          }
-
-          // ---- Client-side filter/search/sort/paginate ----
-          const q = String(search || '').trim().toLowerCase();
-          const matchesSearch = (a) =>
-            !q || JSON.stringify(a).toLowerCase().includes(q);
-          const matchesSeverity =
-            !severityLevel || severityLevel === 'ALL'
-              ? () => true
-              : (a) =>
-                  String(a.severity).toLowerCase() === String(severityLevel).toLowerCase() ||
-                  Number(a.severity) === Number(severityLevel);
-          const matchesState =
-            !alertState || alertState === 'ALL'
-              ? () => true
-              : (a) => String(a.state).toLowerCase() === String(alertState).toLowerCase();
-
-          let filtered = rawAlerts.filter(
-            (a) => matchesSearch(a) && matchesSeverity(a) && matchesState(a)
-          );
-
-          const dir = sortDirection === 'asc' ? 1 : -1;
-          // If v2 data is used and UI asks for "start_time", prefer "triggered_time"
-          const sortFieldEffective =
-            Array.isArray(payload?.alertV2s) && sortField === 'start_time'
-              ? 'triggered_time'
-              : sortField;
-          const val = (obj) => _.get(obj, sortFieldEffective);
-          filtered = filtered.sort((a, b) => {
-            const av = val(a);
-            const bv = val(b);
-            if (av == null && bv == null) return 0;
-            if (av == null) return -dir;
-            if (bv == null) return dir;
-            if (typeof av === 'number' && typeof bv === 'number') return (av - bv) * dir;
-            // try date
-            const ad = Date.parse(av);
-            const bd = Date.parse(bv);
-            if (Number.isFinite(ad) && Number.isFinite(bd)) return (ad - bd) * dir;
-            return String(av).localeCompare(String(bv)) * dir;
-          });
-
-          const totalAlerts = totalFromServer ?? filtered.length;
-          const paged = filtered.slice(from, from + size);
-
-          this.setState({ alerts: perAlertView ? paged : filtered, totalAlerts });
-
-          if (!perAlertView) {
-            const alertsByTriggers = groupAlertsByTrigger(filtered).map((row) => {
-              const latest = _.maxBy(row.alerts || [], (a) =>
-                (a && (a.triggered_time ?? a.start_time)) || 0
+            if (!perAlertView) {
+              const alertsByTriggers = groupAlertsByTrigger(alerts, false);  // Don't group by monitor for v1
+              this.setState(
+                {
+                  totalTriggers: alertsByTriggers.length,
+                  alertsByTriggers,
+                },
+                () => this.getMonitors() // fetch monitor docs after grouping
               );
-              const ts = latest?.triggered_time ?? latest?.start_time ?? null; // v2 first, fallback if needed
-              return { ...row, lastTriggeredTime: ts };
-            });
-            this.setState(
-              {
-                totalTriggers: alertsByTriggers.length,
-                alertsByTriggers,
-              },
-              () => this.getMonitors() // fetch monitor docs after grouping
+            }
+          } else {
+            // ========== V2/NEW MODE: Client-side filtering/sorting/pagination ==========
+            const payload = resp.resp || resp;
+            let rawAlerts = [];
+            let totalFromServer;
+
+            // v2: { alertV2s: [...], totalAlertV2s: N }
+            if (Array.isArray(payload?.alertV2s)) {
+              rawAlerts = payload.alertV2s.map((a) => ({
+                ...a,
+                monitor_id: a.monitor_v2_id,
+                monitor_name: a.monitor_v2_name,
+                trigger_id: a.trigger_v2_id,
+                // v2 provides monitor_version; keep a stable "version" key for itemId
+                version: a.monitor_v2_version ?? a.version,
+                monitorVersion: a.monitor_v2_version,
+                // Map v2 fields to expected column fields
+                start_time: a.triggered_time,
+                trigger_name: a.trigger_v2_name,
+                end_time: a.expiration_time,
+                // v2 may not include a state; default to ACTIVE so filters/selection work
+                state: a.state || 'ACTIVE',
+              }));
+              totalFromServer = payload.totalAlertV2s ?? rawAlerts.length;
+            }
+
+            // Filter by monitor IDs if specified
+            if (Array.isArray(monitorIds) && monitorIds.length) {
+              rawAlerts = rawAlerts.filter((alert) => 
+                monitorIds.includes(alert.monitor_id)
+              );
+            }
+
+            // ---- Client-side filter/search/sort/paginate ----
+            const q = String(search || '').trim().toLowerCase();
+            const matchesSearch = (a) =>
+              !q || JSON.stringify(a).toLowerCase().includes(q);
+            const matchesSeverity =
+              !severityLevel || severityLevel === 'ALL'
+                ? () => true
+                : (a) =>
+                    String(a.severity).toLowerCase() === String(severityLevel).toLowerCase() ||
+                    Number(a.severity) === Number(severityLevel);
+            const matchesState =
+              !alertState || alertState === 'ALL'
+                ? () => true
+                : (a) => String(a.state).toLowerCase() === String(alertState).toLowerCase();
+
+            let filtered = rawAlerts.filter(
+              (a) => matchesSearch(a) && matchesSeverity(a) && matchesState(a)
             );
+
+            const dir = sortDirection === 'asc' ? 1 : -1;
+            const sortFieldEffective = sortField === 'start_time' ? 'triggered_time' : sortField;
+            const val = (obj) => _.get(obj, sortFieldEffective);
+            filtered = filtered.sort((a, b) => {
+              const av = val(a);
+              const bv = val(b);
+              if (av == null && bv == null) return 0;
+              if (av == null) return -dir;
+              if (bv == null) return dir;
+              if (typeof av === 'number' && typeof bv === 'number') return (av - bv) * dir;
+              // try date
+              const ad = Date.parse(av);
+              const bd = Date.parse(bv);
+              if (Number.isFinite(ad) && Number.isFinite(bd)) return (ad - bd) * dir;
+              return String(av).localeCompare(String(bv)) * dir;
+            });
+
+            const totalAlerts = totalFromServer ?? filtered.length;
+            const paged = filtered.slice(from, from + size);
+
+            this.setState({ alerts: perAlertView ? paged : filtered, totalAlerts });
+
+            if (!perAlertView) {
+              const alertsByTriggers = groupAlertsByTrigger(filtered, true).map((row) => {  // Group by monitor for v2
+                const latest = _.maxBy(row.alerts || [], (a) =>
+                  (a && (a.triggered_time ?? a.start_time)) || 0
+                );
+                const ts = latest?.triggered_time ?? latest?.start_time ?? null;
+                return { ...row, lastTriggeredTime: ts };
+              });
+              this.setState(
+                {
+                  totalTriggers: alertsByTriggers.length,
+                  alertsByTriggers,
+                },
+                () => this.getMonitors() // fetch monitor docs after grouping
+              );
+            }
           }
         } else {
           console.log('error getting alerts:', resp);
