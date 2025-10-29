@@ -680,7 +680,12 @@ export default class MonitorService extends MDSEnabledClientService {
       if (search.trim()) {
         must = {
           query_string: {
-            default_field: 'monitor.name',
+            fields: [
+              'monitor.name',                      // Legacy monitors
+              'ppl_monitor.name',                  // PPL monitors (direct)
+              'monitor_v2.ppl_monitor.name',       // PPL monitors (wrapped v2)
+              'workflow.name',                     // Workflow monitors
+            ],
             default_operator: 'AND',
             query: `*${search.trim().split(' ').join('* *')}*`,
           },
