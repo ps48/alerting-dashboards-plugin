@@ -193,6 +193,8 @@ export default class Dashboard extends Component {
             rawAlerts = payload.alertV2s.map((a) => ({
               ...a,
               monitor_id: a.monitor_v2_id,
+              monitor_name: a.monitor_v2_name,  // ← Add monitor_name mapping
+              trigger_id: a.trigger_v2_id,       // ← Add trigger_id mapping for grouping
               // v2 provides monitor_version; keep a stable "version" key for itemId
               version: a.monitor_v2_version ?? a.version,
               monitorVersion: a.monitor_v2_version,

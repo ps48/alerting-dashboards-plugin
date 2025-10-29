@@ -15,12 +15,22 @@ export function groupAlertsByTrigger(alerts) {
   let alertsByTriggers = new Map();
   alerts.map((alert) => {
     const triggerID = alert.trigger_id;
-    const newAlertList = alertsByTriggers.has(triggerID)
-      ? addAlert(alertsByTriggers.get(triggerID), alert)
+    const monitorID = alert.monitor_id;
+    
+    // Create composite key: trigger_id + monitor_id
+    // This ensures alerts are grouped by both trigger AND monitor
+    const compositeKey = `${triggerID}::${monitorID}`;
+    
+    const newAlertList = alertsByTriggers.has(compositeKey)
+      ? addAlert(alertsByTriggers.get(compositeKey), alert)
       : addFirstAlert(alert);
-    alertsByTriggers.set(triggerID, newAlertList);
+    alertsByTriggers.set(compositeKey, newAlertList);
   });
-  return Array.from(alertsByTriggers, ([triggerID, alerts]) => ({ ...alerts, triggerID }));
+  return Array.from(alertsByTriggers, ([compositeKey, alerts]) => {
+    // Extract triggerID from composite key for backward compatibility
+    const triggerID = compositeKey.split('::')[0];
+    return { ...alerts, triggerID };
+  });
 }
 
 export function addFirstAlert(firstAlert) {
