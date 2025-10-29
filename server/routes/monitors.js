@@ -52,12 +52,22 @@ export default function (services, router, dataSourceEnabled) {
     monitorService.listIndices
   );
 
+  // v2 monitors (PPL monitors)
   router.get(
     {
       path: '/api/alerting/monitors',
       validate: { query: createValidateQuerySchema(dataSourceEnabled, fieldValidations) },
     },
     monitorService.getMonitors
+  );
+
+  // v1 monitors (classic/legacy monitors)
+  router.get(
+    {
+      path: '/api/alerting/monitors/v1',
+      validate: { query: createValidateQuerySchema(dataSourceEnabled, fieldValidations) },
+    },
+    monitorService.getMonitorsV1
   );
 
   // ---------- NEW: data-source–aware proxy for SQL/PPL ----------

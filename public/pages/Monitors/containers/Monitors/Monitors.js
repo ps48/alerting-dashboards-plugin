@@ -6,7 +6,14 @@
 import React, { Component } from 'react';
 import _ from 'lodash';
 import queryString from 'query-string';
-import { EuiBasicTable } from '@elastic/eui';
+import { 
+  EuiBasicTable, 
+  EuiButtonGroup,
+  EuiSpacer,
+  EuiFlexGroup,
+  EuiFlexItem,
+  EuiTitle,
+} from '@elastic/eui';
 import AcknowledgeModal from '../../components/AcknowledgeModal';
 import ContentPanel from '../../../../components/ContentPanel';
 import MonitorActions from '../../components/MonitorActions';
@@ -52,6 +59,7 @@ export default class Monitors extends Component {
       monitorState: state,
       loadingMonitors: true,
       monitorItemsToDelete: undefined,
+      viewMode: 'new', // 'new' or 'classic'
     };
     this.getMonitors = _.debounce(this.getMonitors.bind(this), 500, { leading: true });
     this.onTableChange = this.onTableChange.bind(this);
@@ -76,15 +84,25 @@ export default class Monitors extends Component {
     this.onClickCancel = this.onClickCancel.bind(this);
     this.resetFilters = this.resetFilters.bind(this);
 
-    // Hide columns we don't want to show on the Monitors table
-    const HIDDEN_COLS = new Set([
+    // Columns configuration - will be built dynamically based on viewMode
+    this.buildColumns = this.buildColumns.bind(this);
+  }
+
+  // Build columns based on view mode
+  buildColumns() {
+    const { viewMode } = this.state;
+    
+    // In "New" mode, hide certain columns
+    // In "Classic" mode, show all columns
+    const HIDDEN_COLS = viewMode === 'new' ? new Set([
       'Active',
       'Acknowledged',
       'Errors',
       'Ignored',
       'Associations with composite monitors',
-    ]);
-    this.columns = [
+    ]) : new Set();
+    
+    return [
       ...staticColumns.filter((c) => !HIDDEN_COLS.has(c.name)),
       {
         name: 'Actions',
@@ -131,6 +149,10 @@ export default class Monitors extends Component {
     if (isDataSourceChanged(prevProps, this.props)) {
       this.updateMonitorList();
     }
+    // Refresh monitors when view mode changes
+    if (prevState.viewMode !== this.state.viewMode) {
+      this.updateMonitorList();
+    }
   }
 
   updateMonitorList() {
@@ -161,7 +183,14 @@ export default class Monitors extends Component {
         ...(dataSourceId !== undefined && { dataSourceId }), // Only include dataSourceId if it exists
         ...params, // Other parameters
       };
-      const response = await httpClient.get('../api/alerting/monitors', { query: extendedParams });
+      
+      // Call different API based on view mode
+      const { viewMode } = this.state;
+      const apiPath = viewMode === 'classic' 
+        ? '../api/alerting/monitors/v1'  // v1 API for classic view
+        : '../api/alerting/monitors';     // v2 API for new view
+      
+      const response = await httpClient.get(apiPath, { query: extendedParams });
       if (response.ok) {
         let monitors = [];
         let totalMonitors = 0;
@@ -520,6 +549,8 @@ export default class Monitors extends Component {
     };
 
     const useUpdatedUx = getUseUpdatedUx();
+    const { viewMode } = this.state;
+    
     const monitorActions = (
       <MonitorActions
         isEditDisabled={selectedItems.length !== 1}
@@ -529,8 +560,20 @@ export default class Monitors extends Component {
         onBulkDisable={this.onBulkDisable}
         onBulkDelete={this.onBulkDelete}
         onClickEdit={this.onClickEdit}
+        viewMode={viewMode}
       />
     );
+
+    const toggleButtons = [
+      {
+        id: 'new',
+        label: 'New',
+      },
+      {
+        id: 'classic',
+        label: 'Classic',
+      },
+    ];
 
     return (
       <>
@@ -539,8 +582,40 @@ export default class Monitors extends Component {
           bodyStyles={{ padding: 'initial' }}
           title={useUpdatedUx ? undefined : 'Monitors'}
           panelOptions={{ hideTitleBorder: useUpdatedUx }}
-          panelStyles={{ padding: useUpdatedUx && totalMonitors < 1 ? '16px 16px 0px' : '16px' }}
+          panelStyles={{ padding: useUpdatedUx ? '0px' : '16px' }}
         >
+          {useUpdatedUx && (
+            <>
+              <div style={{ padding: '16px 16px 0px 16px' }}>
+                <EuiFlexGroup alignItems="center" justifyContent="spaceBetween" responsive={false}>
+                  <EuiFlexItem grow={false}>
+                    <EuiFlexGroup alignItems="center" gutterSize="m" responsive={false}>
+                      <EuiFlexItem grow={false}>
+                        <EuiTitle size="l">
+                          <h1>Monitors</h1>
+                        </EuiTitle>
+                      </EuiFlexItem>
+                      <EuiFlexItem grow={false}>
+                        <EuiButtonGroup
+                          legend="Monitor view toggle"
+                          options={toggleButtons}
+                          idSelected={viewMode}
+                          onChange={(id) => this.setState({ viewMode: id })}
+                          buttonSize="compressed"
+                          color="text"
+                          isFullWidth={false}
+                        />
+                      </EuiFlexItem>
+                    </EuiFlexGroup>
+                  </EuiFlexItem>
+                  <EuiFlexItem grow={false}>
+                    {monitorActions}
+                  </EuiFlexItem>
+                </EuiFlexGroup>
+              </div>
+              <EuiSpacer size="m" />
+            </>
+          )}
           <MonitorControls
             activePage={page}
             pageCount={Math.ceil(totalMonitors / size) || 1}
@@ -549,7 +624,7 @@ export default class Monitors extends Component {
             onSearchChange={this.onSearchChange}
             onStateChange={this.onMonitorStateChange}
             onPageClick={this.onPageClick}
-            monitorActions={useUpdatedUx ? monitorActions : null}
+            monitorActions={null}
           />
 
           {showAcknowledgeModal && (
@@ -561,31 +636,33 @@ export default class Monitors extends Component {
             />
           )}
 
-          <EuiBasicTable
-            columns={this.columns}
-            hasActions={true}
-            isSelectable={true}
-            /*
-             * EUI doesn't let you manually control the selectedItems, so we have to use the itemId for now
-             * If using monitor ID, doesn't correctly update selectedItems when doing certain bulk actions, because the ID is the same
-             * If using monitor ID + monitor version, it works for everything except Acknowledge, because Acknowledge isn't updating the monitor document
-             * So the best approach for now is to set a currentTime on API response for the table to use as part of itemId,
-             * and whenever new monitors are fetched from the server, we should be deselecting all monitors
-             * */
-            itemId={this.getItemId}
-            items={monitors}
-            noItemsMessage={
-              <MonitorEmptyPrompt
-                filterIsApplied={filterIsApplied}
-                loading={loadingMonitors}
-                resetFilters={this.resetFilters}
-              />
-            }
-            onChange={this.onTableChange}
-            pagination={pagination}
-            selection={selection}
-            sorting={sorting}
-          />
+          <div style={{ padding: useUpdatedUx ? '0px 16px 16px 16px' : '0px' }}>
+            <EuiBasicTable
+              columns={this.buildColumns()}
+              hasActions={true}
+              isSelectable={true}
+              /*
+               * EUI doesn't let you manually control the selectedItems, so we have to use the itemId for now
+               * If using monitor ID, doesn't correctly update selectedItems when doing certain bulk actions, because the ID is the same
+               * If using monitor ID + monitor version, it works for everything except Acknowledge, because Acknowledge isn't updating the monitor document
+               * So the best approach for now is to set a currentTime on API response for the table to use as part of itemId,
+               * and whenever new monitors are fetched from the server, we should be deselecting all monitors
+               * */
+              itemId={this.getItemId}
+              items={monitors}
+              noItemsMessage={
+                <MonitorEmptyPrompt
+                  filterIsApplied={filterIsApplied}
+                  loading={loadingMonitors}
+                  resetFilters={this.resetFilters}
+                />
+              }
+              onChange={this.onTableChange}
+              pagination={pagination}
+              selection={selection}
+              sorting={sorting}
+            />
+          </div>
         </ContentPanel>
         {monitorItemsToDelete && (
           <DeleteMonitorModal

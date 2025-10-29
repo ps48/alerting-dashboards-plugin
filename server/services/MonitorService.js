@@ -978,4 +978,212 @@ export default class MonitorService extends MDSEnabledClientService {
       }
     }
   };
+
+  // Get v1 (classic/legacy) monitors only - excludes v2 PPL monitors
+  getMonitorsV1 = async (context, req, res) => {
+    try {
+      const { from, size, search, sortDirection, sortField, state, monitorIds } = req.query;
+
+      let must = { match_all: {} };
+      if (search.trim()) {
+        must = {
+          query_string: {
+            default_field: 'monitor.name',
+            default_operator: 'AND',
+            query: `*${search.trim().split(' ').join('* *')}*`,
+          },
+        };
+      }
+
+      const should = [];
+      const mustList = [must];
+      
+      // Exclude v2 monitors by filtering out documents with monitor_v2 or ppl_monitor
+      mustList.push({
+        bool: {
+          must_not: [
+            { exists: { field: 'monitor.monitor_v2' } },
+            { exists: { field: 'monitor.ppl_monitor' } },
+            { exists: { field: 'ppl_monitor' } },
+            { exists: { field: 'monitor_v2' } },
+          ],
+        },
+      });
+
+      if (monitorIds !== undefined) {
+        mustList.push({ terms: { _id: Array.isArray(monitorIds) ? monitorIds : [monitorIds] } });
+      } else if (monitorIds === 'empty') {
+        mustList.push({ terms: { _id: [] } });
+      }
+
+      if (state !== 'all') {
+        const enabled = state === 'enabled';
+        should.push({ term: { 'monitor.enabled': enabled } });
+        should.push({ term: { 'workflow.enabled': enabled } });
+      }
+
+      const monitorSorts = { name: 'monitor.name.keyword' };
+      const monitorSortPageData = { size: 1000 };
+      if (monitorSorts[sortField]) {
+        monitorSortPageData.sort = [{ [monitorSorts[sortField]]: sortDirection }];
+        monitorSortPageData.size = _.defaultTo(size, 1000);
+        monitorSortPageData.from = _.defaultTo(from, 0);
+      }
+
+      const params = {
+        body: {
+          seq_no_primary_term: true,
+          version: true,
+          ...monitorSortPageData,
+          query: {
+            bool: {
+              should,
+              minimum_should_match: state !== 'all' ? 1 : 0,
+              must: mustList,
+            },
+          },
+          aggregations: {
+            associated_composite_monitors: {
+              nested: { path: 'workflow.inputs.composite_input.sequence.delegates' },
+              aggs: {
+                monitor_ids: {
+                  terms: { field: 'workflow.inputs.composite_input.sequence.delegates.monitor_id' },
+                },
+              },
+            },
+          },
+        },
+      };
+
+      const client = this.getClientBasedOnDataSource(context, req);
+
+      // Use legacy getMonitors (searches index directly, no v2 wrapper)
+      const getResponse = await client('alerting.getMonitors', params);
+
+      const totalMonitors = _.get(getResponse, 'hits.total.value', 0);
+      const monitorKeyValueTuples = _.get(getResponse, 'hits.hits', []).map((result) => {
+        const {
+          _id: id,
+          _version: version,
+          _seq_no: ifSeqNo,
+          _primary_term: ifPrimaryTerm,
+          _source,
+        } = result;
+
+        // v1 monitors are stored flat in _source.monitor
+        const monitor = _source?.monitor || _source || {};
+        
+        const item_type = monitor.workflow_type || monitor.monitor_type || 'query_level';
+        const name = monitor.name || id;
+        const enabled = !!monitor.enabled;
+
+        if (!Array.isArray(monitor.triggers)) monitor.triggers = [];
+
+        return [
+          id,
+          { id, version, ifSeqNo, ifPrimaryTerm, name, enabled, item_type, monitor },
+        ];
+      });
+
+      const monitorMap = new Map(monitorKeyValueTuples);
+      const associatedCompositeMonitorCountMap = {};
+      _.get(getResponse, 'aggregations.associated_composite_monitors.monitor_ids.buckets', [])
+        .forEach(({ key, doc_count }) => { associatedCompositeMonitorCountMap[key] = doc_count; });
+      const monitorIdsOutput = [...monitorMap.keys()];
+
+      const aggsOrderData = {};
+      const aggsSorts = {
+        active: 'active',
+        acknowledged: 'acknowledged',
+        errors: 'errors',
+        ignored: 'ignored',
+        lastNotificationTime: 'last_notification_time',
+      };
+      if (aggsSorts[sortField]) aggsOrderData.order = { [aggsSorts[sortField]]: sortDirection };
+
+      const aggsParams = {
+        index: INDEX.ALL_ALERTS,
+        body: {
+          size: 0,
+          query: { terms: { monitor_id: monitorIdsOutput } },
+          aggregations: {
+            uniq_monitor_ids: {
+              terms: { field: 'monitor_id', ...aggsOrderData, size: from + size },
+              aggregations: {
+                active: { filter: { term: { state: 'ACTIVE' } } },
+                acknowledged: { filter: { term: { state: 'ACKNOWLEDGED' } } },
+                errors: { filter: { term: { state: 'ERROR' } } },
+                ignored: {
+                  filter: {
+                    bool: {
+                      filter: { term: { state: 'COMPLETED' } },
+                      must_not: { exists: { field: 'acknowledged_time' } },
+                    },
+                  },
+                },
+                last_notification_time: { max: { field: 'last_notification_time' } },
+                latest_alert: {
+                  top_hits: {
+                    size: 1,
+                    sort: [{ start_time: { order: 'desc' } }],
+                    _source: { includes: ['monitor_name', 'trigger_name'] },
+                  },
+                },
+              },
+            },
+          },
+        },
+      };
+
+      const aggsResponse = await client('alerting.esSearch', aggsParams).catch((err) => {
+        if (isIndexNotFoundError(err)) {
+          console.log(`Alerting - MonitorService - getMonitorsV1 - alerts index not found:`, INDEX.ALL_ALERTS);
+          return { aggregations: { uniq_monitor_ids: { buckets: [] } } };
+        }
+        throw err;
+      });
+
+      const buckets = _.get(aggsResponse, 'aggregations.uniq_monitor_ids.buckets', []);
+      buckets.forEach((bucket) => {
+        const {
+          key: monitorId,
+          active: { doc_count: active } = {},
+          acknowledged: { doc_count: acknowledged } = {},
+          errors: { doc_count: errors } = {},
+          ignored: { doc_count: ignored } = {},
+          last_notification_time: { value: lastNotificationTime, value_as_string: lastNotificationTimeString } = {},
+          latest_alert: { hits: { hits: latestAlert = [] } = {} } = {},
+        } = bucket;
+
+        const latestAlertHit = _.get(latestAlert, '[0]._source', {});
+        const monitor = monitorMap.get(monitorId);
+        if (monitor) {
+          monitor.latestAlert = latestAlertHit.start_time;
+          monitor.active = active;
+          monitor.lastNotificationTime = lastNotificationTimeString || lastNotificationTime;
+          monitor.acknowledged = acknowledged;
+          monitor.currentTime = Date.now();
+          monitor.errors = errors;
+          monitor.ignored = ignored;
+          monitor.associatedCompositeMonitorCnt = associatedCompositeMonitorCountMap[monitorId] ?? 0;
+        }
+      });
+
+      monitors = monitorIdsOutput.map((id) => monitorMap.get(id));
+
+      if (sortField && aggsSorts[sortField]) {
+        monitors = _.orderBy(
+          monitors,
+          [(m) => (aggsSorts[sortField] === 'last_notification_time' ? m.lastNotificationTime : m[aggsSorts[sortField]])],
+          [sortDirection]
+        );
+        monitors = monitors.slice(from, from + size);
+      }
+
+      return res.ok({ body: { ok: true, monitors, totalMonitors } });
+    } catch (err) {
+      console.error('Alerting - MonitorService - getMonitorsV1:', err);
+      return res.ok({ body: { ok: false, resp: err.message } });
+    }
+  };
 }
