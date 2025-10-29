@@ -519,6 +519,11 @@ const formikPplTriggerToWire = (t, i = 0) => {
     custom_condition: !isNum ? (t?.custom_condition || t?.customCondition || null) : null,
   };
 
+  // Preserve trigger ID if it exists (for updates)
+  if (t?.id) {
+    trigger.id = t.id;
+  }
+
   // Add optional fields only if they have values (long integers in minutes)
   if (throttle !== null) {
     trigger.throttle = throttle;
