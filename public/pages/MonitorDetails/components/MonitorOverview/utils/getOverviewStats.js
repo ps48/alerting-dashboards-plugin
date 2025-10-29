@@ -160,6 +160,10 @@ export default function getOverviewStats(
       header: 'Monitor version number',
       value: monitorVersion,
     },
+    {
+      header: 'Description',
+      value: monitor.description || DEFAULT_EMPTY_DATA,
+    },
   ];
 
   return overviewStats;

@@ -127,18 +127,36 @@ class CreateMonitor extends Component {
 
     // Helpers to map v2 trigger fields -> Formik fields used by DefineTrigger
     const parseDuration = (val) => {
-      // accepts "30m", "7d", "12h", "15min" (we'll be lenient)
-      if (!val || typeof val !== 'string') return { value: '', unit: 'minutes' };
-      const m = val.trim().match(/^(\d+)\s*([a-zA-Z]+)$/);
-      if (!m) return { value: '', unit: 'minutes' };
-      const amount = Number(m[1]);
-      const u = m[2].toLowerCase();
-      let unit = 'minutes';
-      if (u.startsWith('m')) unit = 'minutes';
-      else if (u.startsWith('h')) unit = 'hours';
-      else if (u.startsWith('d')) unit = 'days';
-      else if (u.startsWith('s')) unit = 'seconds'; // tolerated, even if UI hides seconds
-      return { value: Number.isFinite(amount) ? amount : '', unit };
+      // Handle integer minutes from backend
+      if (typeof val === 'number') {
+        const minutes = val;
+        // Convert to days if evenly divisible by 1440 (24 * 60)
+        if (minutes >= 1440 && minutes % 1440 === 0) {
+          return { value: minutes / 1440, unit: 'days' };
+        }
+        // Convert to hours if evenly divisible by 60
+        if (minutes >= 60 && minutes % 60 === 0) {
+          return { value: minutes / 60, unit: 'hours' };
+        }
+        // Otherwise, use minutes
+        return { value: minutes, unit: 'minutes' };
+      }
+      
+      // Handle string durations like "30m", "7d", "12h", "15min"
+      if (typeof val === 'string') {
+        const m = val.trim().match(/^(\d+)\s*([a-zA-Z]+)$/);
+        if (!m) return { value: '', unit: 'minutes' };
+        const amount = Number(m[1]);
+        const u = m[2].toLowerCase();
+        let unit = 'minutes';
+        if (u.startsWith('m')) unit = 'minutes';
+        else if (u.startsWith('h')) unit = 'hours';
+        else if (u.startsWith('d')) unit = 'days';
+        else if (u.startsWith('s')) unit = 'seconds'; // tolerated, even if UI hides seconds
+        return { value: Number.isFinite(amount) ? amount : '', unit };
+      }
+      
+      return { value: '', unit: 'minutes' };
     };
 
     const mapComparator = (sym) => {

@@ -53,6 +53,27 @@ export function triggerDefinitionToFormik(trigger, monitor) {
   }
 }
 
+/**
+ * Convert minutes to a user-friendly unit (days, hours, or minutes)
+ * Returns { value, unit } where unit is 'days', 'hours', or 'minutes'
+ */
+function minutesToFormikDuration(minutes, defaultMinutes = 0) {
+  const totalMinutes = minutes || defaultMinutes;
+  
+  // Convert to days if evenly divisible by 1440 (24 * 60)
+  if (totalMinutes >= 1440 && totalMinutes % 1440 === 0) {
+    return { value: totalMinutes / 1440, unit: 'days' };
+  }
+  
+  // Convert to hours if evenly divisible by 60
+  if (totalMinutes >= 60 && totalMinutes % 60 === 0) {
+    return { value: totalMinutes / 60, unit: 'hours' };
+  }
+  
+  // Otherwise, use minutes
+  return { value: totalMinutes, unit: 'minutes' };
+}
+
 export function pplTriggerToFormik(trigger, monitor) {
   // PPL triggers have a flat structure, not wrapped in query_level_trigger
   const {
@@ -70,12 +91,10 @@ export function pplTriggerToFormik(trigger, monitor) {
   } = trigger;
 
   // Convert throttle (minutes) to Formik format {value, unit}
-  const throttleValue = throttle || 10;
-  const throttleUnit = 'MINUTES';
+  const throttleFormik = minutesToFormikDuration(throttle, 10);
 
   // Convert expires (minutes) to Formik format {value, unit}
-  const expiresValue = expires || 10080; // default 7 days
-  const expiresUnit = 'MINUTES';
+  const expiresFormik = minutesToFormikDuration(expires, 10080); // default 7 days
 
   return {
     ..._.cloneDeep(FORMIK_INITIAL_TRIGGER_VALUES),
@@ -89,8 +108,8 @@ export function pplTriggerToFormik(trigger, monitor) {
     pplNumResultsCondition: num_results_condition || '>=',
     pplNumResultsValue: num_results_value || 1,
     pplCustomCondition: custom_condition || null,
-    throttle: { value: throttleValue, unit: throttleUnit },
-    expires: { value: expiresValue, unit: expiresUnit },
+    throttle: throttleFormik,
+    expires: expiresFormik,
   };
 }
 
