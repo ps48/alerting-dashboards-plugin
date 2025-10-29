@@ -76,6 +76,7 @@ export default function monitorToFormik(monitorIn) {
   // Extract PPL-specific fields if present
   const pplQuery = monitor.query || '';
   const timestampField = monitor.timestamp_field || '@timestamp';
+  const description = monitor.description || '';
 
   return {
     /* INITIALIZE WITH DEFAULTS */
@@ -83,6 +84,7 @@ export default function monitorToFormik(monitorIn) {
 
     /* CONFIGURE MONITOR */
     name,
+    description,
     disabled: !enabled,
 
     /* This will overwrite the fields in use by Monitor from ui_metadata */

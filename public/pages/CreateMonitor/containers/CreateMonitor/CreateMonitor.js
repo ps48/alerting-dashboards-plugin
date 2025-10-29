@@ -720,18 +720,18 @@ class CreateMonitor extends Component {
 
       <EuiFormRow>
         <EuiCheckbox
-          id="useLegacyMonitorsPplInline"
+          id="useClassicMonitorsPplInline"
           label={
             <span>
-              Use legacy monitors{' '}
-              <EuiToolTip content="Use pre-existing monitor types available in legacy alerts.">
+              Use classic monitors{' '}
+              <EuiToolTip content="Use pre-existing monitor types available in classic alerts.">
                 <EuiIconTip type="iInCircle" />
               </EuiToolTip>
             </span>
           }
           checked={values.monitor_mode === 'legacy'}
           onChange={(e) => setFieldValue('monitor_mode', e.target.checked ? 'legacy' : 'ppl')}
-          data-test-subj="useLegacyCheckboxPplInline"
+          data-test-subj="useClassicCheckboxPplInline"
         />
       </EuiFormRow>
     </>
@@ -1137,39 +1137,39 @@ class CreateMonitor extends Component {
             const safeMonitor = this.buildMonitorForTriggers(values);
             const safeTriggers = _.get(safeMonitor, 'triggers', []);
 
-            const LegacyToggleHeader = (
+            const ClassicToggleHeader = (
               <EuiCheckbox
-                id="useLegacyMonitorsHeader"
+                id="useClassicMonitorsHeader"
                 label={
                   <span>
-                    Use legacy monitors{' '}
-                    <EuiToolTip content="Use pre-existing monitor types available in legacy alerts.">
-                      <EuiIconTip type="iInCircle" data-test-subj="legacyInfoHeader" />
+                    Use classic monitors{' '}
+                    <EuiToolTip content="Use pre-existing monitor types available in classic alerts.">
+                      <EuiIconTip type="iInCircle" data-test-subj="classicInfoHeader" />
                     </EuiToolTip>
                   </span>
                 }
                 checked={values.monitor_mode === 'legacy'}
                 onChange={(e) => setFieldValue('monitor_mode', e.target.checked ? 'legacy' : 'ppl')}
-                data-test-subj="useLegacyCheckboxHeader"
+                data-test-subj="useClassicCheckboxHeader"
               />
             );
 
-            const LegacyToggleInline = (
-              // Shown only in Legacy flow (bottom of Monitor Details card area)
+            const ClassicToggleInline = (
+              // Shown only in Classic flow (bottom of Monitor Details card area)
               <EuiFormRow fullWidth>
                 <EuiCheckbox
-                  id="useLegacyMonitorsInline"
+                  id="useClassicMonitorsInline"
                   label={
                     <span>
-                      Use legacy monitors{' '}
-                      <EuiToolTip content="Use pre-existing monitor types available in legacy alerts.">
-                        <EuiIconTip type="iInCircle" data-test-subj="legacyInfoInline" />
+                      Use classic monitors{' '}
+                      <EuiToolTip content="Use pre-existing monitor types available in classic alerts.">
+                        <EuiIconTip type="iInCircle" data-test-subj="classicInfoInline" />
                       </EuiToolTip>
                     </span>
                   }
                   checked={values.monitor_mode === 'legacy'}
                   onChange={(e) => setFieldValue('monitor_mode', e.target.checked ? 'legacy' : 'ppl')}
-                  data-test-subj="useLegacyCheckboxInline"
+                  data-test-subj="useClassicCheckboxInline"
                 />
               </EuiFormRow>
             );
@@ -1257,10 +1257,10 @@ class CreateMonitor extends Component {
                       setFlyout={this.props.setFlyout}
                     />
 
-                    {/* Place the legacy toggle RIGHT BELOW the Monitor Details card
+                    {/* Place the classic toggle RIGHT BELOW the Monitor Details card
                         (i.e., after schedule's "Run every" UI) */}
                     <EuiSpacer size="s" />
-                    {LegacyToggleInline}
+                    {ClassicToggleInline}
                     <EuiSpacer />
 
                     {isComposite && (

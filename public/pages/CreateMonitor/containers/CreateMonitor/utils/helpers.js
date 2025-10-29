@@ -562,6 +562,7 @@ export const buildPPLMonitorFromFormik = (values) => {
 
   const monitor = {
     name: values.name || 'Untitled monitor',
+    description: values.description || '',
     enabled: !values.disabled,
     schedule,
     query: values.pplQuery || '',
@@ -660,7 +661,13 @@ export const findCommonDateFields = async (httpClient, indices, dataSourceId) =>
         for (const [fieldName, fieldDef] of Object.entries(props)) {
           const fullFieldName = prefix ? `${prefix}.${fieldName}` : fieldName;
           
-          if (fieldDef.type === 'date') {
+          // Include field if:
+          // 1. It has type 'date', OR
+          // 2. The field name contains 'date' (case-insensitive)
+          if (
+            fieldDef.type === 'date' || 
+            fullFieldName.toLowerCase().includes('date')
+          ) {
             dateFields.push(fullFieldName);
           }
           
