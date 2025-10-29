@@ -8,7 +8,8 @@
   "optionalPlugins": [
     "dataSource",
     "dataSourceManagement",
-    "assistantDashboards"
+    "assistantDashboards",
+    "explore"
   ],
   "requiredPlugins": [
     "uiActions",
@@ -21,8 +22,7 @@
     "data",
     "visAugmenter",
     "opensearchDashboardsUtils",
-    "contentManagement", 
-    "explore"
+    "contentManagement"
   ],
   "server": true,
   "ui": true,
