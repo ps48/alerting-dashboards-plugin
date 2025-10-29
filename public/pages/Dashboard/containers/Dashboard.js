@@ -433,6 +433,7 @@ export default class Dashboard extends Component {
         type: 'alertsDashboard',
         payload: {
           ...payload,
+          viewMode: this.state.viewMode,  // Pass viewMode to flyout
           openChainedAlertsFlyout: this.openChainedAlertsFlyout,
           closeFlyout: this.closeFlyout,
         },
