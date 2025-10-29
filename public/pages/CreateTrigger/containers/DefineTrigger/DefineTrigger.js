@@ -371,6 +371,35 @@ class DefineTrigger extends Component {
     this.setState({ accordionsOpen, currentSubmitCount: this.props.submitCount });
   };
 
+  /**
+   * Extract threshold value from custom condition expression
+   * Supports patterns like: count > 10, avg_price >= 100, result < 50
+   */
+  extractThresholdFromCustomCondition = (customCondition) => {
+    if (!customCondition || typeof customCondition !== 'string') {
+      return null;
+    }
+
+    // Match patterns like: count > 10, avg_price >= 100, result < 50, etc.
+    // Regex: looks for comparison operators (>, >=, <, <=, ==, !=) followed by a number
+    const patterns = [
+      /[><=!]+\s*(\d+\.?\d*)/,  // e.g., "> 10", ">= 100", "< 50"
+      /(\d+\.?\d*)\s*[><=!]+/,  // e.g., "10 >", "100 >=", "50 <"
+    ];
+
+    for (const pattern of patterns) {
+      const match = customCondition.match(pattern);
+      if (match && match[1]) {
+        const value = parseFloat(match[1]);
+        if (!isNaN(value)) {
+          return value;
+        }
+      }
+    }
+
+    return null;
+  };
+
   // REPLACEMENT UI for Trigger condition when Type = Custom
   renderCustomCondition = ({ fieldPath, onUpdate }) => (
     <div style={{ paddingLeft: GRID_PAD, maxWidth: GRID_MAX }}>
@@ -395,8 +424,8 @@ class DefineTrigger extends Component {
               </Field>
             </EuiFlexItem>
             <EuiFlexItem grow={false}>
-              <EuiButton size="s" onClick={onUpdate} data-test-subj="updateResults">
-                Update results
+              <EuiButton size="s" onClick={onUpdate} data-test-subj="updateGraph">
+                Update graph
               </EuiButton>
             </EuiFlexItem>
           </EuiFlexGroup>
@@ -569,12 +598,21 @@ class DefineTrigger extends Component {
     } else if (isGraph) {
       const showCustom = selectedType === 'custom';
 
+      // Extract threshold from custom condition if type is 'custom'
+      const customCondition = _.get(triggerValues, `${fieldPath}customCondition`);
+      const extractedThreshold = showCustom ? this.extractThresholdFromCustomCondition(customCondition) : null;
+      
+      // Use extracted threshold for custom conditions, otherwise use regular thresholdValue
+      const displayThresholdValue = showCustom && extractedThreshold !== null 
+        ? extractedThreshold 
+        : _.get(triggerValues, `${fieldPath}thresholdValue`);
+
       const graphEl = (
         <TriggerGraph
           monitorValues={monitorValues}
           response={response}                 // << direct histogram for PPL
           thresholdEnum={_.get(triggerValues, `${fieldPath}thresholdEnum`)}
-          thresholdValue={_.get(triggerValues, `${fieldPath}thresholdValue`)}
+          thresholdValue={displayThresholdValue}
           fieldPath={fieldPath}
           flyoutMode={flyoutMode}
           hideThresholdControls={true}
