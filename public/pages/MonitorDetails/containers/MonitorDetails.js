@@ -91,7 +91,7 @@ export default class MonitorDetails extends Component {
   /** Return ppl_monitor from V2 if present, otherwise null */
   getV2Ppl = (mon) => {
     if (!mon) return null;
-    return mon?.monitor_v2?.ppl_monitor ?? mon?.ppl_monitor ?? null;
+    return mon?.monitor_v2?.ppl_monitor ?? mon?.monitorV2?.ppl_monitor ?? mon?.ppl_monitor ?? null;
   };
 
   getDisplayMonitor = () => {
@@ -107,6 +107,9 @@ export default class MonitorDetails extends Component {
       look_back_window: v2.look_back_window ?? monitor?.look_back_window,
       query_language: v2.query_language ?? monitor?.query_language,
       query: v2.query ?? monitor?.query,
+      description: v2.description ?? monitor?.description,
+      last_update_time: v2.last_update_time ?? monitor?.last_update_time,
+      timestamp_field: v2.timestamp_field ?? monitor?.timestamp_field,
     };
   };
 
@@ -573,7 +576,7 @@ export default class MonitorDetails extends Component {
         </PageHeader>
         {!useUpdatedUx && <EuiSpacer />}
         <MonitorOverview
-          monitor={monitor}
+          monitor={displayMonitor}
           monitorId={monitorId}
           monitorVersion={monitorVersion}
           activeCount={activeCount}

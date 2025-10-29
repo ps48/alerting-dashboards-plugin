@@ -21,6 +21,17 @@ export const MAX_TRIGGERS = 10;
 export function getUnwrappedTriggers(monitor) {
   return monitor.triggers.map((trigger) => {
     let unwrappedTrigger = trigger;
+    
+    // PPL monitors have flat triggers (already unwrapped)
+    // Check if this is a PPL trigger by looking for PPL-specific fields
+    const isPPLTrigger = trigger && (trigger.mode || trigger.type) && !trigger.query_level_trigger;
+    
+    if (isPPLTrigger) {
+      // PPL trigger is already flat, return as-is
+      return trigger;
+    }
+    
+    // Legacy monitors have wrapped triggers
     if (Object.keys(trigger).length === 1) {
       switch (monitor.monitor_type) {
         case MONITOR_TYPE.BUCKET_LEVEL:

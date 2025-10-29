@@ -102,13 +102,16 @@ export function pplTriggerToFormik(trigger, monitor) {
     name: name || '',
     severity: severity || 'info',
     actions: actions || [],
-    // PPL-specific fields
-    pplMode: mode || 'result_set',
-    pplType: type || 'number_of_results',
-    pplNumResultsCondition: num_results_condition || '>=',
-    pplNumResultsValue: num_results_value || 1,
-    pplCustomCondition: custom_condition || null,
-    throttle: throttleFormik,
+    // PPL-specific fields (use non-prefixed names to match formikPplTriggerToWire expectations)
+    mode: mode || 'result_set',
+    type: type || 'number_of_results',
+    uiConditionType: type || 'number_of_results', // Also set uiConditionType for compatibility
+    num_results_condition: num_results_condition || '>=',
+    num_results_value: num_results_value !== undefined ? num_results_value : 1,
+    custom_condition: custom_condition || null,
+    customCondition: custom_condition || null, // Also set camelCase version
+    suppress: throttleFormik, // Use 'suppress' field name
+    throttle: throttleFormik, // Keep both for compatibility
     expires: expiresFormik,
   };
 }

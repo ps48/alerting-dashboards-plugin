@@ -212,9 +212,11 @@ class CreateMonitor extends Component {
     const getExistingPplTriggers = (src) => {
       const candidates = [
         src?.ppl_monitor?.triggers,                        // normalized to .ppl_monitor
-        src?.monitor_v2?.ppl_monitor?.triggers,            // raw v2 doc shape
+        src?.monitor_v2?.ppl_monitor?.triggers,            // raw v2 doc shape (snake_case)
+        src?.monitorV2?.ppl_monitor?.triggers,             // raw v2 doc shape (camelCase)
         src?.monitor?.ppl_monitor?.triggers,               // sometimes wrapped in .monitor
-        src?.monitor?.monitor_v2?.ppl_monitor?.triggers,   // wrapped + v2
+        src?.monitor?.monitor_v2?.ppl_monitor?.triggers,   // wrapped + v2 (snake_case)
+        src?.monitor?.monitorV2?.ppl_monitor?.triggers,    // wrapped + v2 (camelCase)
         src?.triggers,                                     // normalized .triggers on the root
       ];
       for (const c of candidates) {
@@ -232,7 +234,7 @@ class CreateMonitor extends Component {
       const pplTriggers = getExistingPplTriggers(monitorToEdit);
       if (Array.isArray(pplTriggers) && pplTriggers.length) {
         initialValues.triggerDefinitions = pplTriggers.map((t) => ({
-          ...pplTriggerToFormik(t),
+          ...pplTriggerToFormik(t, monitorToEdit),
           id: t.id,
           actions: Array.isArray(t.actions) ? t.actions : [],
         }));
@@ -677,8 +679,10 @@ class CreateMonitor extends Component {
         const candidates = [
           src?.ppl_monitor?.triggers,
           src?.monitor_v2?.ppl_monitor?.triggers,
+          src?.monitorV2?.ppl_monitor?.triggers,
           src?.monitor?.ppl_monitor?.triggers,
           src?.monitor?.monitor_v2?.ppl_monitor?.triggers,
+          src?.monitor?.monitorV2?.ppl_monitor?.triggers,
           src?.triggers,
         ];
         for (const c of candidates) {
@@ -746,10 +750,20 @@ class CreateMonitor extends Component {
         <EuiTextArea
           data-test-subj="pplDescription"
           value={values.description || ''}
-          onChange={(e) => setFieldValue('description', e.target.value)}
-          placeholder="Describe the monitor"
+          onChange={(e) => {
+            const value = e.target.value;
+            if (value.length <= 10000) {
+              setFieldValue('description', value);
+            }
+          }}
+          placeholder="Describe the monitor (max 10,000 characters)"
           fullWidth
         />
+        {values.description && (
+          <EuiText size="xs" color="subdued" style={{ marginTop: '4px' }}>
+            {values.description.length} / 10,000 characters
+          </EuiText>
+        )}
       </EuiFormRow>
 
       <EuiFormRow>
@@ -895,14 +909,22 @@ class CreateMonitor extends Component {
         <QueryEditor
           value={values.pplQuery || ''}
           onChange={(text) => {
-            setFieldValue('pplQuery', text);
-            // Trigger debounced timestamp field detection
-            this.debouncedDetectTimestampFields(text);
+            // Enforce 10,000 character limit
+            if (text.length <= 10000) {
+              setFieldValue('pplQuery', text);
+              // Trigger debounced timestamp field detection
+              this.debouncedDetectTimestampFields(text);
+            }
           }}
           services={this.context?.services || this.context}
           height={220}
           indices={this.state.indices}
         />
+        {values.pplQuery && (
+          <EuiText size="xs" color="subdued" style={{ marginTop: '4px' }}>
+            {values.pplQuery.length} / 10,000 characters
+          </EuiText>
+        )}
       </div>
 
       <EuiSpacer size="m" />
