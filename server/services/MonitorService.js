@@ -1062,8 +1062,11 @@ export default class MonitorService extends MDSEnabledClientService {
 
       const client = this.getClientBasedOnDataSource(context, req);
 
-      // Use legacy getMonitors (searches index directly, no v2 wrapper)
-      const getResponse = await client('alerting.getMonitors', params);
+      // Use direct ES search for v1 monitors (searches .opendistro-alerting-config index)
+      const getResponse = await client('alerting.esSearch', {
+        index: INDEX.SCHEDULED_JOBS,
+        ...params,
+      });
 
       const totalMonitors = _.get(getResponse, 'hits.total.value', 0);
       const monitorKeyValueTuples = _.get(getResponse, 'hits.hits', []).map((result) => {
@@ -1174,7 +1177,7 @@ export default class MonitorService extends MDSEnabledClientService {
         }
       });
 
-      monitors = monitorIdsOutput.map((id) => monitorMap.get(id));
+      let monitors = monitorIdsOutput.map((id) => monitorMap.get(id));
 
       if (sortField && aggsSorts[sortField]) {
         monitors = _.orderBy(
