@@ -21,147 +21,18 @@ import {
   DOC_LEVEL_INPUT_FIELD,
   DOC_LEVEL_QUERY_MAP,
 } from '../../../components/DocumentLevelMonitorQueries/utils/constants';
+import { buildPPLMonitorFromFormik } from './helpers';
 
-// --- helpers to keep PPL builder consistent with helpers.js ---
-const buildLookBackWindowString = (values) => {
-  const frequency = values.frequency;
-  const enabled = values.useLookBackWindow ?? true;
-  if (!enabled) return null;
-
-  const amount = Number(values.lookBackAmount ?? 1);
-  const unit = (values.lookBackUnit || 'hours').toLowerCase(); // seconds|minutes|hours|days
-  const suffix = unit === 'seconds' ? 's' : unit === 'minutes' ? 'm' : unit === 'hours' ? 'h' : 'd';
-  const safeAmount = Math.max(1, isFinite(amount) ? amount : 1);
-  return `${safeAmount}${suffix}`;
-};
-
-function mapSeverityToString(input) {
-  const s = String(input ?? '').toLowerCase().trim();
-  if (['info', 'error', 'low', 'medium', 'high', 'critical'].includes(s)) return s;
-  if (s === '0') return 'info';
-  if (s === '1') return 'low';
-  if (s === '2') return 'medium';
-  if (s === '3') return 'high';
-  if (s === '4') return 'critical';
-  return 'low';
-}
-
-function buildPplTriggerFromFormik(tDef, idx = 0) {
-  const base = tDef?.pplTrigger || tDef?.queryLevelTrigger || tDef || {};
-  const name = base.name || tDef?.name || `trigger_${idx + 1}`;
-  const severity = mapSeverityToString(base.severity ?? tDef?.severity);
-
-  const type = (base.type || base.conditionType || 'number_of_results').toLowerCase();
-  const mode = (base.mode || 'result_set').toLowerCase();
-
-  const normalizeNumCondition = (raw) => {
-    const v = String(raw ?? '').trim().toLowerCase();
-    switch (v) {
-      case 'above':
-      case 'greater than':
-      case '>':
-        return '>';
-      case 'at least':
-      case 'greater than or equal to':
-      case '>=':
-        return '>=';
-      case 'below':
-      case 'less than':
-      case '<':
-        return '<';
-      case 'at most':
-      case 'less than or equal to':
-      case '<=':
-        return '<=';
-      case 'equal':
-      case 'equals':
-      case '==':
-        return '==';
-      case 'not equal':
-      case '!=':
-        return '!=';
-      default:
-        return '>='; // backend-accepted default
-    }
-  };
-  const numCond = normalizeNumCondition(base.num_results_condition || base.operator || base.thresholdComparator);
-  const numVal =
-    base.num_results_value ??
-    base.value ??
-    base.thresholdValue ??
-    1;
-
-  const customCond = base.custom_condition ?? base.customCondition ?? null;
-  const actions = base.actions || [];
-
-  const unitCode = (u) => {
-    const v = String(u || '').toLowerCase();
-    if (v.startsWith('second')) return 's';
-    if (v.startsWith('minute')) return 'm';
-    if (v.startsWith('hour')) return 'h';
-    if (v.startsWith('day')) return 'd';
-    return 'h';
-  };
-  const packDur = (val, unit) => {
-    const n = Number(val);
-    if (!Number.isFinite(n) || n <= 0) return null;
-    return `${n}${unitCode(unit)}`;
-  };
-  const normalizeDuration = (raw) => {
-    if (!raw) return null;
-    if (typeof raw === 'string') return raw.trim();
-    if (typeof raw === 'object') return packDur(raw.value, raw.unit);
-    return null;
-  };
-
-  return {
-    name,
-    severity, 
-    actions,
-    mode, 
-    type, 
-    num_results_condition: type === 'number_of_results' ? numCond : null,
-    num_results_value: type === 'number_of_results' ? Number(numVal) : null,
-    custom_condition: type === 'custom' ? (customCond || 'false') : null,
-    suppress: normalizeDuration(base.suppress),
-    expires: normalizeDuration(base.expires) || '7d',
-    last_triggered_time: null,
-  };
-}
-
-function buildPplTriggers(values) {
-  const defs = values?.triggerDefinitions;
-  if (Array.isArray(defs) && defs.length > 0) {
-    return defs.map((t, i) => buildPplTriggerFromFormik(t, i));
-  }
-  return [];
-}
+// NOTE: All PPL monitor/trigger building logic has been consolidated into helpers.js
+// This file now only handles legacy monitor conversion
 
 export function formikToMonitor(values) {
-  // ppl
+  // PPL Monitor V2 - use consolidated helper from helpers.js
   if (values.monitor_mode === 'ppl') {
-    const uiSchedule = formikToUiSchedule(values);
-    const schedule = buildSchedule(values.frequency, uiSchedule);
-
-    const isCron = values.frequency === 'cronExpression';
-    const lookBack = isCron ? buildLookBackWindowString(values) : null;
-
-    const triggers = buildPplTriggers(values);
-
-    return {
-      ppl_monitor: {
-        name: (values.name || 'Untitled monitor').trim(),
-        enabled: !values.disabled,
-        schedule,
-        ...(lookBack ? { look_back_window: lookBack } : {}),
-        triggers: (triggers || []).map((t) => ({ ...t, severity: String(t.severity || 'INFO').toUpperCase() })),
-        //schema_version: 0,
-        query_language: 'ppl',
-        query: values.pplQuery || '',
-      },
-    };
+    return buildPPLMonitorFromFormik(values);
   }
-  //legacy 
+  
+  // Legacy Monitor V1 
   const uiSchedule = formikToUiSchedule(values);
   const schedule = buildSchedule(values.frequency, uiSchedule);
 
