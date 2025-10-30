@@ -114,9 +114,16 @@ export default class MonitorService extends MDSEnabledClientService {
 
   createPPLMonitor = async (context, req, res) => {
     try {
-      const params = { body: req.body };
       const client = this.getClientBasedOnDataSource(context, req);
-      const createResponse = await client('alerting.createPPLMonitor', params);
+      
+      // Use transport.request for MDS/AOSS compatibility (named endpoints don't work with data sources)
+      const createResponse = await client('transport.request', {
+        method: 'POST',
+        path: '/_plugins/_alerting/v2/monitors',
+        body: req.body,
+        headers: DEFAULT_HEADERS,
+      });
+      
       return res.ok({ body: { ok: true, resp: createResponse } });
     } catch (err) {
       console.error('Alerting - MonitorService - createPPLMonitor:', err);

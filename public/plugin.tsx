@@ -251,37 +251,37 @@ export class AlertingPlugin implements Plugin<void, AlertingStart, AlertingSetup
      */
     const isExploreEnabled = !!explore;
     if (isExploreEnabled) {
-      explore.queryPanelActionsRegistry.register({
-        id: 'alerting-create-monitor-from-explore',
-        order: 1,
-        getIsEnabled: (deps) => {
-          // Allow monitor creation for READY, NO_RESULTS, and ERROR statuses
-          const allowedStatuses = [ResultStatus.READY, ResultStatus.NO_RESULTS, ResultStatus.ERROR];
-          const isStatusAllowed = allowedStatuses.includes(deps.resultStatus.status);
-          
-          // Check if data source is AOSS collection - if so, disable the button
-          const isAOSSCollection = deps.query?.dataset?.dataSource?.type === 'OpenSearch Serverless';
-          
-          return isStatusAllowed && !isAOSSCollection;
-        },
-        getLabel: () => 'Create monitor',
-        getIcon: () => 'bell',
-        onClick: (deps) => {
-          const query = deps.query?.query ?? '';
-          const dataSourceId = deps.query?.dataset?.dataSource?.id;
-          
-          // Build URL with both query and data source ID
-          const urlParams = new URLSearchParams();
-          urlParams.set('ppl', query);
-          if (dataSourceId) {
-            urlParams.set('dataSourceId', dataSourceId);
-          }
-          
-          navigateToAppRef?.(MONITORS_NAV_ID, {
-            path: `#/create-monitor?${urlParams.toString()}`
-          });
-        },
-      });
+    explore.queryPanelActionsRegistry.register({
+      id: 'alerting-create-monitor-from-explore',
+      order: 1,
+      getIsEnabled: (deps) => {
+        // Allow monitor creation for READY, NO_RESULTS, and ERROR statuses
+        const allowedStatuses = [ResultStatus.READY, ResultStatus.NO_RESULTS, ResultStatus.ERROR];
+        const isStatusAllowed = allowedStatuses.includes(deps.resultStatus.status);
+        
+        // Check if data source is AOSS collection - if so, disable the button
+        const isAOSSCollection = deps.query?.dataset?.dataSource?.type === 'OpenSearch Serverless';
+        
+        return isStatusAllowed && !isAOSSCollection;
+      },
+      getLabel: () => 'Create monitor',
+      getIcon: () => 'bell',
+      onClick: (deps) => {
+        const query = deps.query?.query ?? '';
+        const dataSourceId = deps.query?.dataset?.dataSource?.id;
+        
+        // Build URL with both query and data source ID
+        const urlParams = new URLSearchParams();
+        urlParams.set('ppl', query);
+        if (dataSourceId) {
+          urlParams.set('dataSourceId', dataSourceId);
+        }
+        
+        navigateToAppRef?.(MONITORS_NAV_ID, {
+          path: `#/create-monitor?${urlParams.toString()}`
+        });
+      },
+    });
     }
   }
 

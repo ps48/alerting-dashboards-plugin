@@ -1015,7 +1015,7 @@ class CreateMonitor extends Component {
           <>
             <EuiSpacer size="s" />
             <EuiText size="xs" color="warning">
-              <EuiIconTip type="alert" color="warning" /> {dateFieldsError}. Look back window requires a common timestamp field across all indices.
+              <EuiIconTip type="alert" color="warning" /> Look back window requires a common timestamp field across all indices
             </EuiText>
             <EuiSpacer size="s" />
           </>
