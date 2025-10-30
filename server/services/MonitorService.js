@@ -171,10 +171,16 @@ export default class MonitorService extends MDSEnabledClientService {
 
   getPPLMonitor = async (context, req, res) => {
     try {
-      const params = { id: req.params.id };
-      const client = this.getClientBasedOnDataSource(context, req);
-      const raw = await client('alerting.getPPLMonitor', params);
       const id = req.params.id;
+      const client = this.getClientBasedOnDataSource(context, req);
+      
+      // Use transport.request for MDS/AOSS compatibility
+      const raw = await client('transport.request', {
+        method: 'GET',
+        path: `/_plugins/_alerting/v2/monitors/${encodeURIComponent(id)}`,
+        headers: DEFAULT_HEADERS,
+      });
+      
       const monitor =
         _.get(raw, 'monitor_v2.ppl_monitor') ||
         _.get(raw, 'ppl_monitor') ||
@@ -213,9 +219,16 @@ export default class MonitorService extends MDSEnabledClientService {
   deletePPLMonitor = async (context, req, res) => {
     console.log("delete api called. req:", req);
     try {
-      const params = { id: req.params.id };
+      const id = req.params.id;
       const client = this.getClientBasedOnDataSource(context, req);
-      const resp = await client('alerting.deletePPLMonitor', params);
+      
+      // Use transport.request for MDS/AOSS compatibility
+      const resp = await client('transport.request', {
+        method: 'DELETE',
+        path: `/_plugins/_alerting/v2/monitors/${encodeURIComponent(id)}`,
+        headers: DEFAULT_HEADERS,
+      });
+      
       console.log("response:", resp);
       return res.ok({ body: { ok: true, resp } });
     } catch (err) {
@@ -226,9 +239,17 @@ export default class MonitorService extends MDSEnabledClientService {
 
   executePPLMonitorById = async (context, req, res) => {
     try {
-      const params = { id: req.params.id, body: req.body };
+      const id = req.params.id;
       const client = this.getClientBasedOnDataSource(context, req);
-      const resp = await client('alerting.executePPLMonitorById', params);
+      
+      // Use transport.request for MDS/AOSS compatibility
+      const resp = await client('transport.request', {
+        method: 'POST',
+        path: `/_plugins/_alerting/v2/monitors/${encodeURIComponent(id)}/_execute`,
+        body: req.body,
+        headers: DEFAULT_HEADERS,
+      });
+      
       return res.ok({ body: { ok: true, resp } });
     } catch (err) {
       console.error('Alerting - MonitorService - executePPLMonitorById:', err);
@@ -238,9 +259,16 @@ export default class MonitorService extends MDSEnabledClientService {
 
   executePPLMonitor = async (context, req, res) => {
     try {
-      const params = { body: req.body };
       const client = this.getClientBasedOnDataSource(context, req);
-      const resp = await client('alerting.executePPLMonitor', params);
+      
+      // Use transport.request for MDS/AOSS compatibility
+      const resp = await client('transport.request', {
+        method: 'POST',
+        path: '/_plugins/_alerting/v2/monitors/_execute',
+        body: req.body,
+        headers: DEFAULT_HEADERS,
+      });
+      
       return res.ok({ body: { ok: true, resp } });
     } catch (err) {
       console.error('Alerting - MonitorService - executePPLMonitor:', err);
@@ -427,7 +455,11 @@ export default class MonitorService extends MDSEnabledClientService {
 
       // 1) Try v2 GET
       try {
-        const v2 = await client('alerting.getPPLMonitor', { id });
+        const v2 = await client('transport.request', {
+          method: 'GET',
+          path: `/_plugins/_alerting/v2/monitors/${encodeURIComponent(id)}`,
+          headers: DEFAULT_HEADERS,
+        });
         let monitor =
           _.get(v2, 'monitor_v2.ppl_monitor') ||
           _.get(v2, 'ppl_monitor') ||
@@ -492,8 +524,11 @@ export default class MonitorService extends MDSEnabledClientService {
 
       // 2) No v2 doc — try to read from v2 _search by _id (works even if legacy GET is absent)
       try {
-        const search = await client('alerting.searchMonitorsV2', {
+        const search = await client('transport.request', {
+          method: 'POST',
+          path: '/_plugins/_alerting/v2/monitors/_search',
           body: { query: { ids: { values: [id] } }, version: true, seq_no_primary_term: true, size: 1 },
+          headers: DEFAULT_HEADERS,
         });
 
         const hit = _.get(search, 'hits.hits[0]');
@@ -652,7 +687,20 @@ export default class MonitorService extends MDSEnabledClientService {
           cleanedBody = { ppl_monitor: cleanMonitor };
         }
         
-        const resp = await client('alerting.updatePPLMonitor', { id, body: cleanedBody });
+        // Use transport.request for MDS/AOSS compatibility
+        const ifSeqNo = req.query?.ifSeqNo;
+        const ifPrimaryTerm = req.query?.ifPrimaryTerm;
+        const qs = new URLSearchParams();
+        if (Number.isFinite(Number(ifSeqNo))) qs.append('if_seq_no', String(ifSeqNo));
+        if (Number.isFinite(Number(ifPrimaryTerm))) qs.append('if_primary_term', String(ifPrimaryTerm));
+        
+        const resp = await client('transport.request', {
+          method: 'PUT',
+          path: `/_plugins/_alerting/v2/monitors/${encodeURIComponent(id)}${qs.toString() ? `?${qs}` : ''}`,
+          body: cleanedBody,
+          headers: DEFAULT_HEADERS,
+        });
+        
         console.log("resp: ", resp);
         const { _version, _id } = resp || {};
         return res.ok({ body: { ok: true, version: _version, id: _id || id } });
@@ -748,8 +796,13 @@ export default class MonitorService extends MDSEnabledClientService {
 
       const client = this.getClientBasedOnDataSource(context, req);
 
-      // v2 search for monitors
-      const getResponse = await client('alerting.searchMonitorsV2', params);
+      // v2 search for monitors - use transport.request for MDS/AOSS compatibility
+      const getResponse = await client('transport.request', {
+        method: 'POST',
+        path: '/_plugins/_alerting/v2/monitors/_search',
+        body: params.body,
+        headers: DEFAULT_HEADERS,
+      });
 
       const totalMonitors = _.get(getResponse, 'hits.total.value', 0);
       const monitorKeyValueTuples = _.get(getResponse, 'hits.hits', []).map((result) => {
@@ -933,7 +986,13 @@ export default class MonitorService extends MDSEnabledClientService {
       console.log("hit this inline:", req.body);
       // route to v2 when body is PPL/v2
       if (isV2MonitorPayload(req.body)) {
-        const v2Resp = await client('alerting.executePPLMonitor', { body: req.body });
+        // Use transport.request for MDS/AOSS compatibility
+        const v2Resp = await client('transport.request', {
+          method: 'POST',
+          path: '/_plugins/_alerting/v2/monitors/_execute',
+          body: req.body,
+          headers: DEFAULT_HEADERS,
+        });
         
         return res.ok({ body: { ok: true, resp: v2Resp } });
       }
@@ -954,9 +1013,16 @@ export default class MonitorService extends MDSEnabledClientService {
   // v2 pass-through (kept)
   searchMonitorsV2 = async (context, req, res) => {
     try {
-      const params = { body: req.body?.query ?? req.body };
       const client = this.getClientBasedOnDataSource(context, req);
-      const results = await client('alerting.searchMonitorsV2', params);
+      
+      // Use transport.request for MDS/AOSS compatibility
+      const results = await client('transport.request', {
+        method: 'POST',
+        path: '/_plugins/_alerting/v2/monitors/_search',
+        body: req.body?.query ?? req.body,
+        headers: DEFAULT_HEADERS,
+      });
+      
       return res.ok({ body: { ok: true, resp: results } });
     } catch (err) {
       if (isIndexNotFoundError(err)) {
