@@ -407,10 +407,12 @@ export const pplToV2Schedule = (values) => {
   const freq = values.frequency;
 
   if (freq === 'interval') {
+    // Convert unit to lowercase to match text field mapping in OpenSearch
+    const unit = (values.period?.unit || 'MINUTES').toLowerCase();
     return {
       period: {
         interval: values.period?.interval === '' ? 1 : Number(values.period?.interval || 1),
-        unit: values.period?.unit || 'MINUTES',
+        unit: unit,
       },
     };
   }
@@ -445,7 +447,7 @@ export const pplToV2Schedule = (values) => {
   return {
     period: {
       interval: 1,
-      unit: 'MINUTES',
+      unit: 'minutes', // lowercase to match text field mapping
     },
   };
 };
