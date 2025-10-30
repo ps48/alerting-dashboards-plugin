@@ -53,6 +53,8 @@ export const getInitialValues = ({
   }
 
   if (flyoutMode) {
+    console.log('[getInitialValues] flyoutMode detected, embeddable:', embeddable);
+    
     initialValues.name = `${title} ${getDigitId()}`;
     initialValues.index = index;
     initialValues.timeField = timeField;
@@ -64,6 +66,46 @@ export const getInitialValues = ({
 
     // Add aggregations
     initialValues.aggregations = getMetricAgg(embeddable);
+
+    // Extract query from embeddable if available
+    try {
+      console.log('[getInitialValues] Attempting to extract query from embeddable...');
+      const searchSource = embeddable?.vis?.data?.searchSource;
+      console.log('[getInitialValues] searchSource:', searchSource);
+      
+      if (searchSource) {
+        const serialized = searchSource.getSerializedFields?.();
+        console.log('[getInitialValues] Serialized search source:', serialized);
+        
+        const query = serialized?.query || searchSource.getField?.('query');
+        console.log('[getInitialValues] Extracted query:', query);
+        
+        if (query) {
+          // Check if it's a PPL query
+          if (query.language === 'PPL' || query.language === 'ppl') {
+            console.log('[getInitialValues] PPL query detected:', query.query);
+            initialValues.monitor_mode = 'ppl';
+            initialValues.searchType = 'query';
+            initialValues.pplQuery = query.query || '';
+          } else {
+            // Log other query types for debugging
+            console.log('[getInitialValues] Non-PPL query detected:', query.language, query);
+          }
+        }
+      }
+      
+      // Also check if embeddable has query directly
+      const embQuery = embeddable?.vis?.data?.query;
+      console.log('[getInitialValues] embeddable.vis.data.query:', embQuery);
+      if (embQuery && (embQuery.language === 'PPL' || embQuery.language === 'ppl')) {
+        console.log('[getInitialValues] Found PPL query in embeddable.vis.data.query:', embQuery.query);
+        initialValues.monitor_mode = 'ppl';
+        initialValues.searchType = 'query';
+        initialValues.pplQuery = embQuery.query || '';
+      }
+    } catch (err) {
+      console.error('[getInitialValues] Error extracting query from embeddable:', err);
+    }
 
     if (searchType) {
       initialValues.searchType = searchType;

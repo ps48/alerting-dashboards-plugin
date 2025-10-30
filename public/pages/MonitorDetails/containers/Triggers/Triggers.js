@@ -5,7 +5,6 @@
 
 import React, { Component } from 'react';
 import PropTypes from 'prop-types';
-import uuidv4 from 'uuid/v4';
 import { EuiInMemoryTable } from '@elastic/eui';
 import _ from 'lodash';
 
@@ -81,7 +80,7 @@ export default class Triggers extends Component {
 
     this.state = {
       field: 'name',
-      tableKey: uuidv4(),
+      tableKey: `table-${Date.now()}-${Math.random()}`,
       direction: 'asc',
       selectedItems: [],
       items: [],
@@ -121,7 +120,7 @@ export default class Triggers extends Component {
       // which EuiInMemoryTable uses which causes items to not be updated correctly.
       // Whenever the monitor is updated we'll generate a new key for the table
       // which will cause the table component to remount
-      this.setState({ tableKey: uuidv4() });
+      this.setState({ tableKey: `table-${Date.now()}-${Math.random()}` });
     }
   }
 

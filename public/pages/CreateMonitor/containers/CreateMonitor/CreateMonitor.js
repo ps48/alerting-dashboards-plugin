@@ -96,7 +96,8 @@ class CreateMonitor extends Component {
     const baseInitial = getInitialValues({ location, monitorToEdit, edit });
     const initialValues = {
       ...baseInitial,
-      monitor_mode: 'ppl',
+      // Only override monitor_mode if explicitly provided, otherwise use baseInitial or default
+      monitor_mode: baseInitial.monitor_mode || FORMIK_INITIAL_VALUES.monitor_mode,
       useLookBackWindow: baseInitial.useLookBackWindow ?? true,
       lookBackAmount: baseInitial.lookBackAmount ?? 1,
       lookBackUnit: baseInitial.lookBackUnit || 'hours',
@@ -384,16 +385,25 @@ class CreateMonitor extends Component {
 
   getSavedQueryService = () => {
     try {
+      console.log('[getSavedQueryService] Starting...');
+      console.log('[getSavedQueryService] this.context:', this.context);
+      
       const services =
         (this.context && (this.context.services || this.context)) || undefined;
+      console.log('[getSavedQueryService] services:', services);
 
       const data = services?.data;
+      console.log('[getSavedQueryService] data:', data);
+      
       const query = data?.query;
+      console.log('[getSavedQueryService] query:', query);
+      
       const savedQueries = query?.savedQueries;
+      console.log('[getSavedQueryService] savedQueries:', savedQueries);
 
       return savedQueries;
     } catch (e) {
-      console.error('getSavedQueryService() error:', e);
+      console.error('[getSavedQueryService] error:', e);
       return undefined;
     }
   };
@@ -448,17 +458,33 @@ class CreateMonitor extends Component {
 
     // Initialize query in queryString service to prevent "Query was not set" errors
     try {
+      console.log('[componentDidMount] Initializing query service...');
       const services = (this.context && (this.context.services || this.context)) || undefined;
+      console.log('[componentDidMount] services:', services);
+      
       const queryString = services?.data?.query?.queryString;
+      console.log('[componentDidMount] queryString service:', queryString);
+      
       if (queryString) {
-        // Initialize with empty PPL query
+        console.log('[componentDidMount] Setting query to empty PPL...');
         queryString.setQuery({
           query: '',
           language: 'ppl',
         });
+        console.log('[componentDidMount] Query set successfully');
+        
+        // Verify it was set
+        try {
+          const currentQuery = services?.data?.query?.queryString?.getQuery();
+          console.log('[componentDidMount] Current query after setting:', currentQuery);
+        } catch (verifyErr) {
+          console.error('[componentDidMount] Failed to verify query was set:', verifyErr);
+        }
+      } else {
+        console.warn('[componentDidMount] queryString service is not available');
       }
     } catch (e) {
-      // Silent fail - not critical
+      console.error('[componentDidMount] Error initializing query:', e);
     }
 
     // Set data source before making any API calls that use getDataSourceQueryObj()
@@ -523,6 +549,38 @@ class CreateMonitor extends Component {
   // componentWillUnmount() {
   //   this.props.setFlyout(null);
   // }
+  componentDidUpdate(prevProps, prevState) {
+    // Log context changes for debugging
+    if (this.context !== prevProps?.context) {
+      console.log('[componentDidUpdate] Context changed');
+      console.log('[componentDidUpdate] New context:', this.context);
+      
+      const services = (this.context && (this.context.services || this.context)) || undefined;
+      const queryString = services?.data?.query?.queryString;
+      console.log('[componentDidUpdate] queryString service available:', !!queryString);
+      
+      if (queryString) {
+        try {
+          const currentQuery = queryString.getQuery();
+          console.log('[componentDidUpdate] Current query:', currentQuery);
+        } catch (e) {
+          console.error('[componentDidUpdate] Error getting query (not set yet):', e);
+          // If query is not set, try to initialize it
+          try {
+            console.log('[componentDidUpdate] Attempting to initialize query service...');
+            queryString.setQuery({
+              query: '',
+              language: 'ppl',
+            });
+            console.log('[componentDidUpdate] Query initialized successfully');
+          } catch (setErr) {
+            console.error('[componentDidUpdate] Failed to initialize query:', setErr);
+          }
+        }
+      }
+    }
+  }
+
   componentWillUnmount() {
     try {
       this.props.setFlyout(null);
@@ -826,7 +884,10 @@ class CreateMonitor extends Component {
             <EuiFlexItem grow={false}>
               <EuiPopover
                 isOpen={this.state.savedQueriesPopoverOpen}
-                closePopover={() => this.setState({ savedQueriesPopoverOpen: false })}
+                closePopover={() => {
+                  console.log('[Saved Queries] Closing popover');
+                  this.setState({ savedQueriesPopoverOpen: false });
+                }}
                 anchorPosition="downLeft"
                 panelPaddingSize="none"
                 button={
@@ -834,7 +895,13 @@ class CreateMonitor extends Component {
                     size="s"
                     iconType={this.state.savedQueriesPopoverOpen ? 'arrowUp' : 'arrowDown'}
                     iconSide="right"
-                    onClick={() => this.setState((s) => ({ savedQueriesPopoverOpen: !s.savedQueriesPopoverOpen }))}
+                    onClick={() => {
+                      console.log('[Saved Queries] Button clicked, current state:', this.state.savedQueriesPopoverOpen);
+                      console.log('[Saved Queries] Context at click time:', this.context);
+                      const svc = this.getSavedQueryService();
+                      console.log('[Saved Queries] Got saved query service:', svc);
+                      this.setState((s) => ({ savedQueriesPopoverOpen: !s.savedQueriesPopoverOpen }));
+                    }}
                     data-test-subj="savedQueriesButton"
                   >
                     Saved queries
@@ -848,17 +915,23 @@ class CreateMonitor extends Component {
                     padding: 8,
                   }}
                 >
-                  <SavedQueryManagementComponent
-                    savedQueryService={this.getSavedQueryService()}
-                    onLoad={this.handleLoadSavedQuery}
-                    onClearSavedQuery={() => this.setState({ savedQueriesPopoverOpen: false })}
-                    showSaveQuery={false}
-                    saveQuery={this.handleSaveQuery}
-                    useNewSavedQueryUI={true}
-                    closeMenuPopover={() => this.setState({ savedQueriesPopoverOpen: false })}
-                    onInitiateSave={() => {}}
-                    onInitiateSaveAsNew={() => {}}
-                  />
+                  {(() => {
+                    const savedQueryService = this.getSavedQueryService();
+                    console.log('[SavedQueryManagementComponent] Rendering with savedQueryService:', savedQueryService);
+                    return (
+                      <SavedQueryManagementComponent
+                        savedQueryService={savedQueryService}
+                        onLoad={this.handleLoadSavedQuery}
+                        onClearSavedQuery={() => this.setState({ savedQueriesPopoverOpen: false })}
+                        showSaveQuery={false}
+                        saveQuery={this.handleSaveQuery}
+                        useNewSavedQueryUI={true}
+                        closeMenuPopover={() => this.setState({ savedQueriesPopoverOpen: false })}
+                        onInitiateSave={() => {}}
+                        onInitiateSaveAsNew={() => {}}
+                      />
+                    );
+                  })()}
                 </div>
               </EuiPopover>
             </EuiFlexItem>

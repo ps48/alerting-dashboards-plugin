@@ -143,6 +143,7 @@ export function formikToMonitor(values) {
     const uiSchedule = formikToUiSchedule(values);
     const schedule = buildSchedule(values.frequency, uiSchedule);
 
+    const isCron = values.frequency === 'cronExpression';
     const lookBack = isCron ? buildLookBackWindowString(values) : null;
 
     const triggers = buildPplTriggers(values);

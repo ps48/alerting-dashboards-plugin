@@ -87,7 +87,7 @@ export const FORMIK_INITIAL_VALUES = {
   preventVisualEditor: false,
 
   /* MODE TOGGLE */
-  monitor_mode: 'legacy', // 'legacy' | 'ppl'
+  monitor_mode: 'ppl', // 'legacy' | 'ppl' - default to v2/PPL mode
 };
 
 if (dataSourceEnabled()) {

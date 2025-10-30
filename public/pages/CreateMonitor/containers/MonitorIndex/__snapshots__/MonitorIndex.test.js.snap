@@ -37,7 +37,7 @@ exports[`MonitorIndex renders 1`] = `
       "groupedOverFieldName": "bytes",
       "groupedOverTop": 5,
       "index": Array [],
-      "monitor_mode": "legacy",
+      "monitor_mode": "ppl",
       "monitor_type": "query_level_monitor",
       "monthly": Object {
         "day": 1,
@@ -199,7 +199,7 @@ exports[`MonitorIndex renders 1`] = `
                   "groupedOverFieldName": "bytes",
                   "groupedOverTop": 5,
                   "index": Array [],
-                  "monitor_mode": "legacy",
+                  "monitor_mode": "ppl",
                   "monitor_type": "query_level_monitor",
                   "monthly": Object {
                     "day": 1,
@@ -306,7 +306,7 @@ exports[`MonitorIndex renders 1`] = `
                   "groupedOverFieldName": "bytes",
                   "groupedOverTop": 5,
                   "index": Array [],
-                  "monitor_mode": "legacy",
+                  "monitor_mode": "ppl",
                   "monitor_type": "query_level_monitor",
                   "monthly": Object {
                     "day": 1,
@@ -477,7 +477,7 @@ exports[`MonitorIndex renders 1`] = `
                           "groupedOverFieldName": "bytes",
                           "groupedOverTop": 5,
                           "index": Array [],
-                          "monitor_mode": "legacy",
+                          "monitor_mode": "ppl",
                           "monitor_type": "query_level_monitor",
                           "monthly": Object {
                             "day": 1,
@@ -584,7 +584,7 @@ exports[`MonitorIndex renders 1`] = `
                           "groupedOverFieldName": "bytes",
                           "groupedOverTop": 5,
                           "index": Array [],
-                          "monitor_mode": "legacy",
+                          "monitor_mode": "ppl",
                           "monitor_type": "query_level_monitor",
                           "monthly": Object {
                             "day": 1,
