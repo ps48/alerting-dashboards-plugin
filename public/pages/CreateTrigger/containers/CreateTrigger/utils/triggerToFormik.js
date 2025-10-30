@@ -86,15 +86,19 @@ export function pplTriggerToFormik(trigger, monitor) {
     num_results_condition,
     num_results_value,
     custom_condition,
-    throttle, // in minutes
-    expires, // in minutes
+    throttle, // in minutes (legacy)
+    throttle_minutes, // in minutes (new API format)
+    expires, // in minutes (legacy)
+    expires_minutes, // in minutes (new API format)
   } = trigger;
 
   // Convert throttle (minutes) to Formik format {value, unit}
-  const throttleFormik = minutesToFormikDuration(throttle, 10);
+  // Support both old and new field names
+  const throttleFormik = minutesToFormikDuration(throttle_minutes ?? throttle, 10);
 
   // Convert expires (minutes) to Formik format {value, unit}
-  const expiresFormik = minutesToFormikDuration(expires, 10080); // default 7 days
+  // Support both old and new field names
+  const expiresFormik = minutesToFormikDuration(expires_minutes ?? expires, 10080); // default 7 days
 
   return {
     ..._.cloneDeep(FORMIK_INITIAL_TRIGGER_VALUES),

@@ -104,7 +104,7 @@ export default class MonitorDetails extends Component {
       enabled: typeof v2.enabled === 'boolean' ? v2.enabled : monitor?.enabled,
       triggers: Array.isArray(v2.triggers) ? v2.triggers : (monitor?.triggers || []),
       schedule: v2.schedule ?? monitor?.schedule,
-      look_back_window: v2.look_back_window ?? monitor?.look_back_window,
+      look_back_window: v2.look_back_window_minutes ?? v2.look_back_window ?? monitor?.look_back_window,
       query_language: v2.query_language ?? monitor?.query_language,
       query: v2.query ?? monitor?.query,
       description: v2.description ?? monitor?.description,

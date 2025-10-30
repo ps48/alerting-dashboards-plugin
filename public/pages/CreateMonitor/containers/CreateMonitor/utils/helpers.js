@@ -525,11 +525,12 @@ const formikPplTriggerToWire = (t, i = 0) => {
   }
 
   // Add optional fields only if they have values (long integers in minutes)
+  // Use the _minutes suffix as required by the API
   if (throttle !== null) {
-    trigger.throttle = throttle;
+    trigger.throttle_minutes = throttle;
   }
   if (expires !== null) {
-    trigger.expires = expires;
+    trigger.expires_minutes = expires;
   }
 
   return trigger;
@@ -537,7 +538,7 @@ const formikPplTriggerToWire = (t, i = 0) => {
 
 /**
  * Build the Monitor V2 (PPL) payload expected by backend.
- * Shape: { "ppl_monitor": { name, enabled, schedule, query, triggers, look_back_window?, timestamp_field? } }
+ * Shape: { "ppl_monitor": { name, enabled, schedule, query, triggers, look_back_window_minutes?, timestamp_field? } }
  */
 export const buildPPLMonitorFromFormik = (values) => {
   const schedule = pplToV2Schedule(values);
@@ -556,7 +557,7 @@ export const buildPPLMonitorFromFormik = (values) => {
           num_results_condition: '>=',
           num_results_value: 1,
           custom_condition: null,
-          expires: 10080, // 7 days in minutes
+          expires_minutes: 10080, // 7 days in minutes
         },
       ];
 
@@ -569,9 +570,9 @@ export const buildPPLMonitorFromFormik = (values) => {
     triggers,
   };
 
-  // Add look_back_window and timestamp_field together (both required)
+  // Add look_back_window_minutes and timestamp_field together (both required)
   if (lookBack && values.timestampField) {
-    monitor.look_back_window = lookBack;
+    monitor.look_back_window_minutes = lookBack;
     monitor.timestamp_field = values.timestampField;
   }
 

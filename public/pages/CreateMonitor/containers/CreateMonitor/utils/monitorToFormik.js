@@ -112,9 +112,11 @@ export default function monitorToFormik(monitorIn) {
   const description = monitor.description || '';
   
   // Parse look_back_window (in minutes) back to formik format
+  // Support both old and new field names
   let lookBackFormik = {};
-  if (monitor.look_back_window) {
-    const minutes = monitor.look_back_window;
+  const lookBackMinutes = monitor.look_back_window_minutes ?? monitor.look_back_window;
+  if (lookBackMinutes) {
+    const minutes = lookBackMinutes;
     lookBackFormik.useLookBackWindow = true;
     
     // Convert back to friendly units

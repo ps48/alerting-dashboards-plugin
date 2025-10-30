@@ -383,7 +383,15 @@ export default class MonitorService extends MDSEnabledClientService {
        sort: [{ [sortField || 'start_time']: { order: sortDirection || 'desc' } }],
        query: { bool: { must: must.length ? must : [{ match_all: {} }] } },
      };
-     const es = await client('alerting.esSearch', { index: INDEX.ALL_ALERTS, body });
+     
+     // Use transport.request for MDS/AOSS compatibility
+     const es = await client('transport.request', {
+       method: 'POST',
+       path: `/${INDEX.ALL_ALERTS}/_search`,
+       body,
+       headers: DEFAULT_HEADERS,
+     });
+     
      const hits = es?.hits?.hits || [];
      const alerts = hits.map((h) => ({ id: h._id, version: h._version, ...(h._source || {}) }));
      const totalAlerts = es?.hits?.total?.value || alerts.length;
@@ -483,7 +491,15 @@ export default class MonitorService extends MDSEnabledClientService {
               },
             },
           };
-          const searchResponse = await client('alerting.esSearch', aggsParams);
+          
+          // Use transport.request for MDS/AOSS compatibility
+          const searchResponse = await client('transport.request', {
+            method: 'POST',
+            path: `/${INDEX.ALL_ALERTS}/_search`,
+            body: aggsParams.body,
+            headers: DEFAULT_HEADERS,
+          });
+          
           const dayCount = _.get(searchResponse, 'aggregations.24_hour_count.buckets.0.doc_count', 0);
           const activeBuckets = _.get(searchResponse, 'aggregations.active_count.buckets', []);
           const activeCount = activeBuckets.reduce(
@@ -562,7 +578,15 @@ export default class MonitorService extends MDSEnabledClientService {
               },
             },
           };
-          const searchResponse = await client('alerting.esSearch', aggsParams);
+          
+          // Use transport.request for MDS/AOSS compatibility
+          const searchResponse = await client('transport.request', {
+            method: 'POST',
+            path: `/${INDEX.ALL_ALERTS}/_search`,
+            body: aggsParams.body,
+            headers: DEFAULT_HEADERS,
+          });
+          
           const dayCount = _.get(searchResponse, 'aggregations.24_hour_count.buckets.0.doc_count', 0);
           const activeBuckets = _.get(searchResponse, 'aggregations.active_count.buckets', []);
           const activeCount = activeBuckets.reduce(
@@ -898,7 +922,14 @@ export default class MonitorService extends MDSEnabledClientService {
         },
       };
 
-      const esAggsResponse = await client('alerting.esSearch', aggsParams);
+      // Use transport.request for MDS/AOSS compatibility
+      const esAggsResponse = await client('transport.request', {
+        method: 'POST',
+        path: `/${INDEX.ALL_ALERTS}/_search`,
+        body: aggsParams.body,
+        headers: DEFAULT_HEADERS,
+      });
+      
       const buckets = _.get(esAggsResponse, 'aggregations.uniq_monitor_ids.buckets', []).map((bucket) => {
         const {
           key: id,
@@ -1040,10 +1071,17 @@ export default class MonitorService extends MDSEnabledClientService {
   searchMonitors = async (context, req, res) => {
     try {
       const { query, index, size } = req.body;
-      const params = { index, size, body: query };
 
       const client = this.getClientBasedOnDataSource(context, req);
-      const results = await client('alerting.esSearch', params);
+      
+      // Use transport.request for MDS/AOSS compatibility
+      const results = await client('transport.request', {
+        method: 'POST',
+        path: `/${index}/_search`,
+        body: { ...query, size },
+        headers: DEFAULT_HEADERS,
+      });
+      
       return res.ok({ body: { ok: true, resp: results } });
     } catch (err) {
       if (isIndexNotFoundError(err)) {
@@ -1136,9 +1174,12 @@ export default class MonitorService extends MDSEnabledClientService {
       const client = this.getClientBasedOnDataSource(context, req);
 
       // Use direct ES search for v1 monitors (searches .opendistro-alerting-config index)
-      const getResponse = await client('alerting.esSearch', {
-        index: INDEX.SCHEDULED_JOBS,
-        ...params,
+      // Use transport.request for MDS/AOSS compatibility
+      const getResponse = await client('transport.request', {
+        method: 'POST',
+        path: `/${INDEX.SCHEDULED_JOBS}/_search`,
+        body: params.body,
+        headers: DEFAULT_HEADERS,
       });
 
       const totalMonitors = _.get(getResponse, 'hits.total.value', 0);
@@ -1216,7 +1257,13 @@ export default class MonitorService extends MDSEnabledClientService {
         },
       };
 
-      const aggsResponse = await client('alerting.esSearch', aggsParams).catch((err) => {
+      // Use transport.request for MDS/AOSS compatibility
+      const aggsResponse = await client('transport.request', {
+        method: 'POST',
+        path: `/${INDEX.ALL_ALERTS}/_search`,
+        body: aggsParams.body,
+        headers: DEFAULT_HEADERS,
+      }).catch((err) => {
         if (isIndexNotFoundError(err)) {
           console.log(`Alerting - MonitorService - getMonitorsV1 - alerts index not found:`, INDEX.ALL_ALERTS);
           return { aggregations: { uniq_monitor_ids: { buckets: [] } } };
